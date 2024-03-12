@@ -41,3 +41,7 @@ jobs:
     - name: Pull and Deploy Image
       run: |
         ssh ${{ secrets.SSH_CONNECTION }} -o SendEnv="DOCKER_METADATA_OUTPUT_VERSION" "cd infra && TAG=$DOCKER_METADATA_OUTPUT_VERSION docker compose up --no-deps --force-recreate -d househunt"
+    - name: Remove SSH Key
+      if: ${{ always() }}
+      run : |
+        rm -rf ~/.ssh
