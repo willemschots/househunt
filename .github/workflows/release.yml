@@ -40,4 +40,4 @@ jobs:
         echo "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
     - name: Pull and Deploy Image
       run: |
-        ssh ${{ secrets.SSH_CONNECTION }} "cd infra && TAG=${{ steps.meta.outputs.tags[0]}} docker compose up --no-deps --force-recreate -d househunt"
+        ssh ${{ secrets.SSH_CONNECTION }} -o SendEnv="DOCKER_METADATA_OUTPUT_VERSION" "cd infra && TAG=$DOCKER_METADATA_OUTPUT_VERSION docker compose up --no-deps --force-recreate -d househunt"
