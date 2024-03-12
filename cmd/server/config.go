@@ -25,7 +25,7 @@ type config struct {
 func defaultConfig() config {
 	return config{
 		http: httpConfig{
-			addr:            "localhost:8888",
+			addr:            ":8888",
 			readTimeout:     time.Second * 5,
 			writeTimeout:    time.Second * 10,
 			idleTimeout:     time.Second * 120,
