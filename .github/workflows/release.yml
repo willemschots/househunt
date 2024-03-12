@@ -1,4 +1,4 @@
-name: Build, publish and deploy a new image.
+name: Image Handling
 
 on:
   release:
@@ -6,12 +6,12 @@ on:
     - 'published'
 
 jobs:
-  build-image:
+  image:
     runs-on: ubuntu-22.04
     steps:
     - name: Checkout
       uses: actions/checkout@v4
-    - name: Docker meta
+    - name: Docker Meta
       id: meta
       uses: docker/metadata-action@v5
       with:
@@ -26,10 +26,18 @@ jobs:
       with:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
-    - name: Build and push
+    - name: Build and Push Image
       uses: docker/build-push-action@v5
       with:
         context: .
         push: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
+    - name: Create SSH key
+      run: |
+        install -m 600 -D /dev/null ~/.ssh/id_rsa
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        echo "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+    - name: Pull and Deploy Image
+      run: |
+        ssh ${{ secrets.SSH_CONNECTION }} "cd infra && TAG=${{ steps.meta.outputs.tags[0]}} docker compose up --no-deps --force-recreate -d househunt"

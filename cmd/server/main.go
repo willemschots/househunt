@@ -49,7 +49,7 @@ func run(ctx context.Context, w io.Writer) int {
 	g, gCtx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		logger.Info("starting http server")
+		logger.Info("starting http server", "addr", cfg.http.addr)
 		// ListenAndServe always returns a non-nil error,
 		// g will cancel gCtx when an error is returned, so
 		// this will also stop the other goroutine.
