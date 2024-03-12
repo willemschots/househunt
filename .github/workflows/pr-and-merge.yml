@@ -1,4 +1,4 @@
-name: Lint and test.
+name: Quality Control
 
 on:
   push:
@@ -11,6 +11,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-22.04
+    name: Testing
     steps:
     - name: Checkout
       uses: actions/checkout@v4
@@ -22,6 +23,7 @@ jobs:
       run: make test-race
   lint:
     runs-on: ubuntu-22.04
+    name: Linting
     steps:
     - name: Checkout
       uses: actions/checkout@v4
