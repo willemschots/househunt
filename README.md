@@ -1,7 +1,31 @@
 # Househunt - A complete Go web application
 
-This project contains an example web application, useful for learning purposes.
+After learning Go's syntax and building a few single package projects, you now want to build a web application.
 
-Househunt is being build in public by Willem Schots, you can follow along [on Twitter](https://www.x.com/willemschots). You can find out more in [this article](https://www.willem.dev/articles/example-web-application-project/).
+However, it's daunting to start and organize your first bigger Go project:
 
-You can see househunt in action at [examplego.com](https://examplego.com), this is the live "production" environment for the app.
+- Where do you put your files?
+- How do structure your application?
+- How do you combine the different packages?
+- How do you write unit and integration tests?
+- .. and many more questions.
+
+One way to learn all this this is by reading existing source code.
+
+There are a lot of existing Go repositories out there, but most of them are not made for self-learning. They are either overwhelmingly big, too trivial or lack documentation.
+
+This is where the `househunt` project comes in. Househunt is a fully featured Go web application with the explicit aim of being __an example web application__.
+
+It uses the standard library where possible and is well documented.
+
+## The househunt project
+
+Househunt will be a web app where real estate agents can post listings and house hunter can respond to them. You can find out more in [this article](https://www.willem.dev/articles/example-web-application-project/).
+
+## The production server
+
+You can see househunt in action at [examplego.com](https://examplego.com), this is considered the production environment for the app.
+
+## Build in public
+
+Househunt is being build in public by [Willem Schots](https://www.willem.dev/), you can follow along [on Twitter](https://www.x.com/willemschots). 
