@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -63,15 +64,16 @@ var envMap = map[string]func(v string, c *config) error{
 func configFromEnv() (config, error) {
 	c := defaultConfig()
 
+	var errSum error
 	for key, mf := range envMap {
 		if val, ok := os.LookupEnv(key); ok {
 			if err := mf(val, &c); err != nil {
-				return c, fmt.Errorf("invalid env variable %s: %w", key, err)
+				errSum = errors.Join(errSum, fmt.Errorf("invalid env variable %s: %w", key, err))
 			}
 		}
 	}
 
-	return c, nil
+	return c, errSum
 }
 
 // confDuration attempts to parse v into tgt and checks if the result is in
