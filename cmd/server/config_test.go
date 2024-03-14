@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -77,8 +78,34 @@ func TestConfigFromEnv(t *testing.T) {
 			if err == nil {
 				t.Error("expected error, got <nil>")
 			}
+
+			// Check that the error message contains the invalid env variable.
+			// These errors are immediately logged, so I'm fine comparing on a string level.
+			msg := err.Error()
+			if !strings.Contains(msg, tc.key) {
+				t.Errorf("expected error message to mention %s, got %s", tc.key, msg)
+			}
 		})
 	}
+
+	t.Run("fail, multiple invalid env variables", func(t *testing.T) {
+		envForTest(t, "HTTP_READ_TIMEOUT", "-1ms")
+		envForTest(t, "HTTP_WRITE_TIMEOUT", "-1ms")
+
+		_, err := configFromEnv()
+		if err == nil {
+			t.Error("expected error, got <nil>")
+		}
+
+		// Check that the error message contains both invalid env variables.
+		// Again, these errors are immediately logged, so I'm fine comparing on a string level.
+		msg := err.Error()
+		for _, key := range []string{"HTTP_READ_TIMEOUT", "HTTP_WRITE_TIMEOUT"} {
+			if !strings.Contains(msg, key) {
+				t.Errorf("expected error message to mention %s, got %s", key, msg)
+			}
+		}
+	})
 }
 
 // envForTest sets an environment variable for a test and unsets it when the test is done.
