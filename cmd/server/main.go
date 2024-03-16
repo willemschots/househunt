@@ -9,6 +9,9 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/willemschots/househunt/assets"
+	"github.com/willemschots/househunt/internal/web"
+	"github.com/willemschots/househunt/internal/web/view"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -28,18 +31,14 @@ func run(ctx context.Context, w io.Writer) int {
 		return 1
 	}
 
+	viewRenderer := view.NewFSRenderer(assets.TemplateFS)
+
 	srv := &http.Server{
 		Addr:         cfg.http.addr,
 		ReadTimeout:  cfg.http.readTimeout,
 		WriteTimeout: cfg.http.writeTimeout,
 		IdleTimeout:  cfg.http.idleTimeout,
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-			_, err := w.Write([]byte("Hello, world!"))
-			if err != nil {
-				logger.Error("failed to write response", "error", err)
-			}
-		}),
+		Handler:      web.NewServer(logger, viewRenderer),
 	}
 
 	// We need to run two tasks concurrently:
