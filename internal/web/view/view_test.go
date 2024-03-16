@@ -61,6 +61,14 @@ func TestView_ParseAndRender(t *testing.T) {
 			data: "World!",
 			want: `<html><h1>Hello World!</h1></html>`,
 		},
+		"check data is escaped": {
+			files: map[string]string{
+				"base.html": `<html>{{ . }}</html>`,
+			},
+			name: "",
+			data: "<script>alert('xss')</script>",
+			want: `<html>&lt;script&gt;alert(&#39;xss&#39;)&lt;/script&gt;</html>`,
+		},
 	}
 
 	for name, tc := range okTests {

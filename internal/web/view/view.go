@@ -2,9 +2,9 @@ package view
 
 import (
 	"fmt"
+	"html/template"
 	"io"
 	"io/fs"
-	"text/template"
 )
 
 const baseFilename = "base.html"
