@@ -10,11 +10,21 @@ import (
 	"time"
 )
 
+const (
+	// testURLPrefix is used to identify the scheme, host and port of the test server.
+	testURLPrefix = "http://localhost:8888"
+	// publicURL is an unauthenticated URL that we check to see if the server is available.
+	publicURL = testURLPrefix
+
+	// httpClientTimeout is the timeout for the http client to wait for a response.
+	httpClientTimeout = 50 * time.Millisecond
+)
+
 func Test_Run(t *testing.T) {
 	t.Run("ok, says it started then stopped http server", func(t *testing.T) {
 		out := newBuffer()
 
-		ctx := cancelOnceServed(t, "http://localhost:8888")
+		ctx := cancelOnceServed(t, publicURL)
 
 		got := run(ctx, out)
 		want := 0
@@ -95,34 +105,49 @@ func assertLog(t *testing.T, log string, want ...string) {
 	}
 }
 
+// cancelOnceServed returns a context that is canceled after given url returned status OK.
 func cancelOnceServed(t *testing.T, url string) context.Context {
-	httpClient := &http.Client{
-		Timeout: 50 * time.Millisecond,
-	}
+	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 
-	go func() {
-		defer cancel()
+	result := make(chan error, 1)
 
-		ticks := time.NewTicker(100 * time.Millisecond)
-		for {
-			select {
-			case <-ctx.Done():
-				t.Errorf("context cancelled before server started serving: %s", ctx.Err())
-				return
-			case <-ticks.C:
-				res, err := httpClient.Get(url)
-				if err != nil {
-					continue
-				}
-				defer res.Body.Close()
-				if res.StatusCode == http.StatusOK {
-					return
-				}
-			}
+	t.Cleanup(func() {
+		err := <-result
+		if err != nil {
+			t.Fatalf("error waiting for status ok: %v", err)
 		}
+	})
+
+	go func() {
+		err := waitForStatusOK(ctx, url)
+		result <- err
+		cancel()
 	}()
 
 	return ctx
+}
+
+func waitForStatusOK(ctx context.Context, url string) error {
+	httpClient := &http.Client{
+		Timeout: httpClientTimeout,
+	}
+
+	ticks := time.NewTicker(httpClientTimeout * 2)
+	for {
+		select {
+		case <-ticks.C:
+			res, err := httpClient.Get(url)
+			if err != nil {
+				continue
+			}
+			defer res.Body.Close()
+			if res.StatusCode == http.StatusOK {
+				return nil
+			}
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 }
