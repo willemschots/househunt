@@ -1,0 +1,12 @@
+{{ define "title" }}{{ . }}{{end}}
+
+{{define "body"}}
+
+<h1>Register as an Agent</h1>
+<form action="/register" id="register-account">
+  <input type="email" name="email" placeholder="Email" required>
+  <input type="password" name="password" placeholder="Password" required>
+  <input type="submit" value="Register Account">
+</form>
+
+{{end}}
