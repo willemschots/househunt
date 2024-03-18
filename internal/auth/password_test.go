@@ -112,7 +112,7 @@ func Test_Password_PreventExposure(t *testing.T) {
 
 	t.Run("ok, fmt", func(t *testing.T) {
 		assert(t, pwd.String())
-		assert(t, fmt.Sprintf("%s", pwd))
+		assert(t, fmt.Sprintf("%s", pwd)) //nolint:gosimple
 		assert(t, fmt.Sprintf("%v", pwd))
 		assert(t, fmt.Sprintf("%#v", pwd))
 	})
