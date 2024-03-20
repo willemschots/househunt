@@ -2,7 +2,7 @@
 FROM golang:1.22-alpine as build
 
 # Git is required for fetching the dependencies.
-RUN apk add --no-cache git
+RUN apk add --no-cache git gcc musl-dev
 
 # Certificates.
 RUN apk --no-cache add ca-certificates
@@ -20,7 +20,7 @@ RUN go mod download
 COPY ./ ./
 
 # Build the binary.
-RUN CGO_ENABLED=0 go build -o /out/server cmd/server/*.go
+RUN CGO_ENABLED=1 go build -o /out/server cmd/server/*.go
 
 # Stage 2. Run the binary.
 FROM scratch AS final
