@@ -50,7 +50,8 @@ var (
 
 // RunFS runs migrations from the provided fs.FS. It returns a slice of migrations that were
 // run, if no migrations were run it returns an empty slice. RunFS assumes all migration files
-// can be loaded into memory.
+// can be loaded into memory. RunFS only considers files with the .sql extension in the
+// root of the FS.
 func RunFS(ctx context.Context, db *sql.DB, fileSys fs.FS, meta Metadata) ([]Migration, error) {
 	// Load all migration files from the filesystem.
 	files, err := loadFiles(fileSys)
@@ -201,7 +202,7 @@ func loadFiles(fileSys fs.FS) ([]file, error) {
 
 	files := make([]file, 0, len(entries))
 	for _, entry := range entries {
-		if entry.IsDir() {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
 			continue
 		}
 
