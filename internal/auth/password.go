@@ -22,7 +22,7 @@ const (
 	SecretMarker = "<!PASSWORD_REDACTED!>"
 )
 
-var InvalidPasswordErr = fmt.Errorf("invalid password")
+var ErrInvalidPassword = fmt.Errorf("invalid password")
 
 // Password is a plaintext password.
 //
@@ -41,7 +41,7 @@ type Password struct {
 // It errors if the password is too short or too long.
 func ParsePassword(pwd string) (Password, error) {
 	if len(pwd) < minPasswordBytes || len(pwd) > maxPasswordBytes {
-		return Password{}, InvalidPasswordErr
+		return Password{}, ErrInvalidPassword
 	}
 
 	return Password{
