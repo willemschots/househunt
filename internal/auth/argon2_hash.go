@@ -100,3 +100,20 @@ func (h *Argon2Hash) UnmarshalText(text []byte) error {
 	*h = parsed
 	return nil
 }
+
+// Scan implements the sql.Scanner interface.
+func (h *Argon2Hash) Scan(v any) error {
+	s, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("can only scan strings, got %T", v)
+	}
+
+	parsed, err := ParseArgon2Hash(s)
+	if err != nil {
+		return err
+	}
+
+	*h = parsed
+
+	return nil
+}

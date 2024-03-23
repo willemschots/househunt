@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 
 	"github.com/willemschots/househunt/internal/auth"
@@ -23,12 +24,11 @@ func (t *Tx) Rollback() error {
 
 // SaveUser saves a user to the database.
 // The provided user might have its ID, CreatedAt and UpdatedAt modified.
-func (t *Tx) SaveUser(u *User) error {
+func (t *Tx) SaveUser(u *auth.User) error {
 	now := t.nowFunc()
 
 	if u.ID == 0 {
 		const q = `INSERT INTO users (email, password_hash, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`
-
 		result, err := t.tx.Exec(q, u.Email, u.PasswordHash.String(), u.IsActive, now, now)
 		if err != nil {
 			return err
@@ -43,7 +43,6 @@ func (t *Tx) SaveUser(u *User) error {
 		u.CreatedAt = now
 	} else {
 		const q = `UPDATE users SET email = ?, password_hash = ?, is_active = ?, updated_at = ? WHERE id = ?`
-
 		result, err := t.tx.Exec(q, u.Email, u.PasswordHash.String(), u.IsActive, now, u.ID)
 		if err != nil {
 			return err
@@ -55,7 +54,7 @@ func (t *Tx) SaveUser(u *User) error {
 		}
 
 		if n != 1 {
-			return fmt.Errorf("tried to update user with id %d that does not exist", u.ID)
+			return fmt.Errorf("tried to update user with id %d: %w", u.ID, ErrNotFound)
 		}
 	}
 
@@ -64,14 +63,27 @@ func (t *Tx) SaveUser(u *User) error {
 	return nil
 }
 
-func (t *Tx) FindUserByEmail(v email.Address) (User, error) {
-	return User{}, nil
+func (t *Tx) FindUserByEmail(v email.Address) (auth.User, error) {
+	const q = `SELECT id, email, password_hash, is_active, created_at, updated_at FROM users WHERE email = ?`
+	row := t.tx.QueryRow(q, v)
+
+	var u auth.User
+	err := row.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.IsActive, &u.CreatedAt, &u.UpdatedAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return auth.User{}, ErrNotFound
+		}
+		return auth.User{}, err
+	}
+
+	return u, nil
 }
 
-func (t *Tx) SaveEmailToken(v EmailToken) error {
-	return nil
-}
-
-func (t *Tx) FindEmailToken(v auth.Argon2Hash) (EmailToken, error) {
-	return EmailToken{}, nil
-}
+// TODO:
+//func (t *Tx) SaveEmailToken(v auth.EmailToken) error {
+//	return nil
+//}
+//
+//func (t *Tx) FindEmailToken(v auth.Argon2Hash) (auth.EmailToken, error) {
+//	return auth.EmailToken{}, nil
+//}

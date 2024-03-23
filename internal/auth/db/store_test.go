@@ -2,6 +2,7 @@ package db_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"testing"
@@ -13,7 +14,7 @@ import (
 )
 
 func Test_Tx_SaveUser(t *testing.T) {
-	t.Run("ok, in same tx", func(t *testing.T) {
+	t.Run("ok, create and update user", func(t *testing.T) {
 		store := storeForTest(t)
 
 		tx, err := store.BeginTx(context.Background())
@@ -21,24 +22,26 @@ func Test_Tx_SaveUser(t *testing.T) {
 			t.Fatalf("failed to begin tx: %v", err)
 		}
 
-		user := newUser(t)
+		user := testUser(t, nil)
 
-		// Save the user for a first time.
-		t.Run("save new user", func(t *testing.T) {
+		t.Run("create", func(t *testing.T) {
 			err := tx.SaveUser(&user)
 			if err != nil {
 				t.Fatalf("failed to save user: %v", err)
 			}
 
-			want := newUser(t)
-			// The store should set the following fields of user.
-			want.ID = 1
-			want.CreatedAt = now(t, 0)
-			want.UpdatedAt = now(t, 0)
+			want := testUser(t, func(u *auth.User) {
+				// The store should set the following fields of user.
+				u.ID = 1
+				u.CreatedAt = now(t, 0)
+				u.UpdatedAt = now(t, 0)
+			})
 
 			if !reflect.DeepEqual(user, want) {
 				t.Errorf("got\n%#v\nwant\n%#v\n", user, want)
 			}
+
+			assertFindUser(t, tx, want)
 		})
 
 		// The user has been saved succesfully.
@@ -47,24 +50,26 @@ func Test_Tx_SaveUser(t *testing.T) {
 		user.PasswordHash = argon2Hash(t, "$argon2id$v=19$m=47104,t=1,p=1$CkX5zzYLJMWm0y/17eScyw$Qfah+NewdsdeF0+iV72mShZhRO93Qwzdj17TUZCH6ZU")
 		user.IsActive = true
 
-		// And save the user again.
-		t.Run("save user again", func(t *testing.T) {
+		t.Run("update", func(t *testing.T) {
 			err := tx.SaveUser(&user)
 			if err != nil {
 				t.Fatalf("failed to save user: %v", err)
 			}
 
-			want := newUser(t)
-			want.ID = 1
-			want.Email = "jacob@example.com"
-			want.PasswordHash = argon2Hash(t, "$argon2id$v=19$m=47104,t=1,p=1$CkX5zzYLJMWm0y/17eScyw$Qfah+NewdsdeF0+iV72mShZhRO93Qwzdj17TUZCH6ZU")
-			want.IsActive = true
-			want.CreatedAt = now(t, 0)
-			want.UpdatedAt = now(t, 1) // The store should update the UpdatedAt field.
+			want := testUser(t, func(u *auth.User) {
+				u.ID = 1
+				u.Email = "jacob@example.com"
+				u.PasswordHash = argon2Hash(t, "$argon2id$v=19$m=47104,t=1,p=1$CkX5zzYLJMWm0y/17eScyw$Qfah+NewdsdeF0+iV72mShZhRO93Qwzdj17TUZCH6ZU")
+				u.IsActive = true
+				u.CreatedAt = now(t, 0)
+				u.UpdatedAt = now(t, 1) // The store should update the UpdatedAt field.
+			})
 
 			if !reflect.DeepEqual(user, want) {
 				t.Errorf("got\n%#v\nwant\n%#v\n", user, want)
 			}
+
+			assertFindUser(t, tx, want)
 		})
 
 		err = tx.Commit()
@@ -73,73 +78,7 @@ func Test_Tx_SaveUser(t *testing.T) {
 		}
 	})
 
-	t.Run("ok, in seperate tx", func(t *testing.T) {
-		store := storeForTest(t)
-
-		user := newUser(t)
-
-		t.Run("save new user", func(t *testing.T) {
-			tx, err := store.BeginTx(context.Background())
-			if err != nil {
-				t.Fatalf("failed to begin tx: %v", err)
-			}
-
-			err = tx.SaveUser(&user)
-			if err != nil {
-				t.Fatalf("failed to save user: %v", err)
-			}
-
-			want := newUser(t)
-			want.ID = 1
-			want.CreatedAt = now(t, 0)
-			want.UpdatedAt = now(t, 0)
-
-			if !reflect.DeepEqual(user, want) {
-				t.Errorf("got\n%#v\nwant\n%#v\n", user, want)
-			}
-
-			err = tx.Commit()
-			if err != nil {
-				t.Fatalf("failed to commit tx: %v", err)
-			}
-		})
-
-		// Update all fields that can be modified.
-		user.Email = "jacob@example.com"
-		user.PasswordHash = argon2Hash(t, "$argon2id$v=19$m=47104,t=1,p=1$CkX5zzYLJMWm0y/17eScyw$Qfah+NewdsdeF0+iV72mShZhRO93Qwzdj17TUZCH6ZU")
-		user.IsActive = true
-
-		t.Run("save user again", func(t *testing.T) {
-			tx, err := store.BeginTx(context.Background())
-			if err != nil {
-				t.Fatalf("failed to begin tx: %v", err)
-			}
-
-			err = tx.SaveUser(&user)
-			if err != nil {
-				t.Fatalf("failed to save user: %v", err)
-			}
-
-			want := newUser(t)
-			want.ID = 1
-			want.Email = "jacob@example.com"
-			want.PasswordHash = argon2Hash(t, "$argon2id$v=19$m=47104,t=1,p=1$CkX5zzYLJMWm0y/17eScyw$Qfah+NewdsdeF0+iV72mShZhRO93Qwzdj17TUZCH6ZU")
-			want.IsActive = true
-			want.CreatedAt = now(t, 0)
-			want.UpdatedAt = now(t, 1)
-
-			if !reflect.DeepEqual(user, want) {
-				t.Errorf("got\n%#v\nwant\n%#v\n", user, want)
-			}
-
-			err = tx.Commit()
-			if err != nil {
-				t.Fatalf("failed to commit tx: %v", err)
-			}
-		})
-	})
-
-	t.Run("fail, need to have database create ID", func(t *testing.T) {
+	t.Run("fail, need to have database set ID", func(t *testing.T) {
 		store := storeForTest(t)
 
 		tx, err := store.BeginTx(context.Background())
@@ -147,12 +86,31 @@ func Test_Tx_SaveUser(t *testing.T) {
 			t.Fatalf("failed to begin tx: %v", err)
 		}
 
-		user := newUser(t)
-		user.ID = 1 // The ID is already set, but this user has not been saved before.
+		user := testUser(t, func(u *auth.User) {
+			u.ID = 1 // The ID is already set, but this user has not been created yet.
+		})
 
 		err = tx.SaveUser(&user)
-		if err == nil {
-			t.Fatalf("expected an error, but got nil")
+		if !errors.Is(err, db.ErrNotFound) {
+			t.Fatalf("expected errors to be %v got %v (via errors.Is)", db.ErrNotFound, err)
+		}
+	})
+}
+
+func Test_Tx_FindUserByEmail(t *testing.T) {
+	// success cases already tested in Test_Tx_SaveUser.
+
+	t.Run("fail, not found", func(t *testing.T) {
+		store := storeForTest(t)
+
+		tx, err := store.BeginTx(context.Background())
+		if err != nil {
+			t.Fatalf("failed to begin tx: %v", err)
+		}
+
+		_, err = tx.FindUserByEmail("jacob@example.com")
+		if !errors.Is(err, db.ErrNotFound) {
+			t.Fatalf("expected errors to be %v got %v (via errors.Is)", db.ErrNotFound, err)
 		}
 	})
 }
@@ -195,14 +153,33 @@ func argon2Hash(t *testing.T, raw string) auth.Argon2Hash {
 	return hash
 }
 
-func newUser(t *testing.T) db.User {
+func testUser(t *testing.T, modFunc func(*auth.User)) auth.User {
 	t.Helper()
 
-	return db.User{
+	u := auth.User{
 		ID:           0,
 		Email:        "alice@example.com",
 		PasswordHash: argon2Hash(t, "$argon2id$v=19$m=47104,t=1,p=1$vP9U4C5jsOzFQLj0gvUkYw$YLrSb2dGfcVohlm8syynqHs6/NHxXS9rt/t6TjL7pi0"),
 		CreatedAt:    time.Time{},
 		UpdatedAt:    time.Time{},
+	}
+
+	if modFunc != nil {
+		modFunc(&u)
+	}
+
+	return u
+}
+
+func assertFindUser(t *testing.T, tx auth.Tx, want auth.User) {
+	t.Helper()
+
+	got, err := tx.FindUserByEmail(want.Email)
+	if err != nil {
+		t.Fatalf("failed to find user: %v", err)
+	}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got\n%#v\nwant\n%#v\n", got, want)
 	}
 }

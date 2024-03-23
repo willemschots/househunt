@@ -3,8 +3,14 @@ package db
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"time"
+
+	"github.com/willemschots/househunt/internal/auth"
 )
+
+// ErrNotFound indicates something was not found.
+var ErrNotFound = errors.New("not found")
 
 // NowFunc is a function that returns the current time.
 type NowFunc func() time.Time
@@ -24,7 +30,7 @@ func New(db *sql.DB, nowFunc NowFunc) *Store {
 }
 
 // BeginTx starts a new transaction.
-func (s *Store) BeginTx(ctx context.Context) (*Tx, error) {
+func (s *Store) BeginTx(ctx context.Context) (auth.Tx, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
