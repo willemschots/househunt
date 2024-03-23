@@ -15,6 +15,7 @@ type Store interface {
 type Tx interface {
 	Commit() error
 	Rollback() error
-	SaveUser(u *User) error
+	CreateUser(u *User) error
+	UpdateUser(u *User) error
 	FindUserByEmail(v email.Address) (User, error)
 }

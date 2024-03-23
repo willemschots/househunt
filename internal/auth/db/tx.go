@@ -7,6 +7,7 @@ import (
 
 	"github.com/willemschots/househunt/internal/auth"
 	"github.com/willemschots/househunt/internal/email"
+	"github.com/willemschots/househunt/internal/errorz"
 )
 
 type Tx struct {
@@ -22,42 +23,55 @@ func (t *Tx) Rollback() error {
 	return t.tx.Rollback()
 }
 
-// SaveUser saves a user to the database.
-// The provided user might have its ID, CreatedAt and UpdatedAt modified.
-func (t *Tx) SaveUser(u *auth.User) error {
-	now := t.nowFunc()
-
-	if u.ID == 0 {
-		const q = `INSERT INTO users (email, password_hash, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`
-		result, err := t.tx.Exec(q, u.Email, u.PasswordHash.String(), u.IsActive, now, now)
-		if err != nil {
-			return err
-		}
-
-		id, err := result.LastInsertId()
-		if err != nil {
-			return err
-		}
-
-		u.ID = int(id)
-		u.CreatedAt = now
-	} else {
-		const q = `UPDATE users SET email = ?, password_hash = ?, is_active = ?, updated_at = ? WHERE id = ?`
-		result, err := t.tx.Exec(q, u.Email, u.PasswordHash.String(), u.IsActive, now, u.ID)
-		if err != nil {
-			return err
-		}
-
-		n, err := result.RowsAffected()
-		if err != nil {
-			return err
-		}
-
-		if n != 1 {
-			return fmt.Errorf("tried to update user with id %d: %w", u.ID, ErrNotFound)
-		}
+// CreateUser creates a user in the database.
+// CreateUser updates the users ID, CreatedAt and UpdatedAt fields.
+func (t *Tx) CreateUser(u *auth.User) error {
+	if u.ID != 0 {
+		return fmt.Errorf("user already has an ID: %w", errorz.ErrConstraintViolated)
 	}
 
+	now := t.nowFunc()
+
+	const q = `INSERT INTO users (email, password_hash, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`
+	result, err := t.tx.Exec(q, u.Email, u.PasswordHash.String(), u.IsActive, now, now)
+	if err != nil {
+		return errorz.MapDBErr(err)
+	}
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		return err
+	}
+
+	// Only set the fields after the query was executed.
+	u.ID = int(id)
+	u.CreatedAt = now
+	u.UpdatedAt = now
+
+	return nil
+}
+
+// UpdateUser updates a user in the database.
+// UpdateUser updates the users UpdatedAt field.
+func (t *Tx) UpdateUser(u *auth.User) error {
+	now := t.nowFunc()
+
+	const q = `UPDATE users SET email = ?, password_hash = ?, is_active = ?, updated_at = ? WHERE id = ?`
+	result, err := t.tx.Exec(q, u.Email, u.PasswordHash.String(), u.IsActive, now, u.ID)
+	if err != nil {
+		return errorz.MapDBErr(err)
+	}
+
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if n != 1 {
+		return fmt.Errorf("tried to update user with id %d: %w", u.ID, errorz.ErrNotFound)
+	}
+
+	// Only set the fields after the query was executed.
 	u.UpdatedAt = now
 
 	return nil
@@ -71,7 +85,7 @@ func (t *Tx) FindUserByEmail(v email.Address) (auth.User, error) {
 	err := row.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.IsActive, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return auth.User{}, ErrNotFound
+			return auth.User{}, errorz.ErrNotFound
 		}
 		return auth.User{}, err
 	}

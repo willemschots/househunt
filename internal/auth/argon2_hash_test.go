@@ -96,3 +96,37 @@ func Test_Argon2Hash_UnmarshalText(t *testing.T) {
 		})
 	}
 }
+
+func Test_Argon2Hash_Scan(t *testing.T) {
+	for name, tc := range passwordTests() {
+		t.Run(name, func(t *testing.T) {
+			var got auth.Argon2Hash
+			err := got.Scan(tc.hashStr)
+			if err != nil {
+				t.Fatalf("failed to scan to argon2 hash: %v", err)
+			}
+
+			if !reflect.DeepEqual(got, tc.hash) {
+				t.Errorf("got\n%#v\nwant\n%#v\n", got, tc.hash)
+			}
+		})
+	}
+
+	for name, txt := range failTextToArgon2Hash() {
+		t.Run(name, func(t *testing.T) {
+			var got auth.Argon2Hash
+			err := got.Scan(txt)
+			if err == nil || !errors.Is(err, auth.ErrInvalidArgon2Hash) {
+				t.Errorf("expected errors to match (using errors.Is)\n%v\ngot\n%v\n", auth.ErrInvalidArgon2Hash, err)
+			}
+		})
+	}
+
+	t.Run("fail, not a string", func(t *testing.T) {
+		var got auth.Argon2Hash
+		err := got.Scan(42)
+		if err == nil {
+			t.Fatalf("expected error to be non-nil")
+		}
+	})
+}

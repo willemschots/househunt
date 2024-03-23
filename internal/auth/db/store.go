@@ -3,14 +3,10 @@ package db
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"time"
 
 	"github.com/willemschots/househunt/internal/auth"
 )
-
-// ErrNotFound indicates something was not found.
-var ErrNotFound = errors.New("not found")
 
 // NowFunc is a function that returns the current time.
 type NowFunc func() time.Time
