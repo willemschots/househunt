@@ -48,6 +48,17 @@ var (
 	ErrMigrationsMismatch = errors.New("migrations mismatch")
 )
 
+// MigrationError is an error that occurred while running a migration.
+type MigrationError struct {
+	Sequence int
+	Filename string
+	Err      error
+}
+
+func (m MigrationError) Error() string {
+	return fmt.Sprintf("migration [%d] %q failed: %v", m.Sequence, m.Filename, m.Err)
+}
+
 // RunFS runs migrations from the provided fs.FS. It returns a slice of migrations that were
 // run, if no migrations were run it returns an empty slice. RunFS assumes all migration files
 // can be loaded into memory. RunFS only considers files with the .sql extension in the
@@ -68,7 +79,7 @@ func RunFS(ctx context.Context, db *sql.DB, fileSys fs.FS, meta Metadata) ([]Mig
 	// Create migrations table if it does not exist.
 	_, err = tx.Exec(migrationsTableQuery)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create migrations table: %w", err)
+		return nil, rollback(tx, fmt.Errorf("failed to create migrations table: %w", err))
 	}
 
 	// Query migrations that ran before.
@@ -76,12 +87,12 @@ func RunFS(ctx context.Context, db *sql.DB, fileSys fs.FS, meta Metadata) ([]Mig
 		return tx.Query(q)
 	})
 	if err != nil {
-		return nil, err
+		return nil, rollback(tx, err)
 	}
 
 	result, err := migrate(tx, before, files, meta)
 	if err != nil {
-		return nil, err
+		return nil, rollback(tx, err)
 	}
 
 	err = tx.Commit()
@@ -130,13 +141,19 @@ func migrate(tx *sql.Tx, ranBefore []Migration, files []file, meta Metadata) ([]
 
 	ranNow := make([]Migration, 0)
 	for i, f := range files {
+		sequence := len(ranBefore) + i
+
 		_, err := tx.Exec(f.content)
 		if err != nil {
-			return nil, fmt.Errorf("failed to run migration %q: %w", f.name, err)
+			return nil, MigrationError{
+				Sequence: sequence,
+				Filename: f.name,
+				Err:      err,
+			}
 		}
 
 		m := Migration{
-			Sequence: len(ranBefore) + i,
+			Sequence: sequence,
 			Filename: f.name,
 			Metadata: meta,
 		}
@@ -218,4 +235,13 @@ func loadFiles(fileSys fs.FS) ([]file, error) {
 	}
 
 	return files, nil
+}
+
+func rollback(tx *sql.Tx, err error) error {
+	rErr := tx.Rollback()
+	if rErr != nil {
+		return errors.Join(err, rErr)
+	}
+
+	return err
 }
