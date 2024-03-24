@@ -8,7 +8,8 @@ CREATE TABLE users(
 );
 
 CREATE TABLE email_tokens (
-    token_hash  TEXT NOT NULL PRIMARY KEY,
+    id          INTEGER PRIMARY KEY,
+    token_hash  TEXT NOT NULL,
     user_id     INTEGER NOT NULL,
     email       TEXT NOT NULL,
     purpose     TEXT NOT NULL,

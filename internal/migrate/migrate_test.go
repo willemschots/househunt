@@ -5,8 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -226,13 +224,7 @@ func Test_QueryMigrations(t *testing.T) {
 }
 
 func openSQLiteDBForTest(t *testing.T) *sql.DB {
-	name := strings.ReplaceAll(t.Name(), string(os.PathSeparator), "_")
-	dbDir, err := os.MkdirTemp(os.TempDir(), name)
-	if err != nil {
-		t.Fatalf("failed to create temporary directory: %v", err)
-	}
-
-	db, err := sql.Open("sqlite3", filepath.Join(dbDir, "test.db"))
+	db, err := sql.Open("sqlite3", ":memory:?_foreign_keys=on")
 	if err != nil {
 		t.Fatalf("failed to open database: %v", err)
 	}
@@ -241,11 +233,6 @@ func openSQLiteDBForTest(t *testing.T) *sql.DB {
 		err := db.Close()
 		if err != nil {
 			t.Errorf("failed to close database: %v", err)
-		}
-
-		err = os.RemoveAll(dbDir)
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			t.Errorf("failed to remove database: %v", err)
 		}
 	})
 

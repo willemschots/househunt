@@ -16,14 +16,15 @@ import (
 func RunTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 
-	db, err := sql.Open("sqlite3", ":memory:")
+	db, err := sql.Open("sqlite3", ":memory:?_foreign_keys=on")
 	if err != nil {
-		t.Fatalf("failed to open %v", err)
+		t.Fatalf("failed to open database: %v", err)
 	}
 
 	t.Cleanup(func() {
-		if err := db.Close(); err != nil {
-			t.Fatalf("failed to close db: %v", err)
+		err := db.Close()
+		if err != nil {
+			t.Errorf("failed to close database: %v", err)
 		}
 	})
 
