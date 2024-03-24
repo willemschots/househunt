@@ -123,6 +123,42 @@ func Test_RunFS(t *testing.T) {
 		})
 	})
 
+	t.Run("fail, error in migration", func(t *testing.T) {
+		db := openSQLiteDBForTest(t)
+
+		metas := []migrate.Metadata{
+			{"v1.0.0", timeRFC3339(t, "2024-03-20T14:56:00Z")},
+			{"v2.0.0", timeRFC3339(t, "2024-04-20T14:56:00Z")},
+		}
+
+		t.Run("run_1", func(t *testing.T) {
+			_, err := migrate.RunFS(context.Background(), db, os.DirFS("./testdata/error_in_migration/run_1"), metas[0])
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			assertNrOfRowsInTestTable(t, db, 0)
+		})
+
+		t.Run("run_2", func(t *testing.T) {
+			_, err := migrate.RunFS(context.Background(), db, os.DirFS("./testdata/error_in_migration/run_2"), metas[1])
+
+			var mErr migrate.MigrationError
+			if !errors.As(err, &mErr) {
+				t.Fatalf("got %T, want %T", err, mErr)
+			}
+
+			want := migrate.MigrationError{
+				Sequence: 1,
+				Filename: "2_insert_with_typo.sql",
+			}
+
+			if mErr.Sequence != want.Sequence || mErr.Filename != want.Filename {
+				t.Errorf("got %v, want %v", mErr, want)
+			}
+		})
+	})
+
 	t.Run("fail, migration file that was executed was removed from disk", func(t *testing.T) {
 		db := openSQLiteDBForTest(t)
 		metas := []migrate.Metadata{
