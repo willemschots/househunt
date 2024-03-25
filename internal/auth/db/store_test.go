@@ -10,8 +10,8 @@ import (
 
 	"github.com/willemschots/househunt/internal/auth"
 	"github.com/willemschots/househunt/internal/auth/db"
+	"github.com/willemschots/househunt/internal/db/testdb"
 	"github.com/willemschots/househunt/internal/errorz"
-	"github.com/willemschots/househunt/internal/migrate/testdb"
 )
 
 func Test_Tx_CreateUser(t *testing.T) {
