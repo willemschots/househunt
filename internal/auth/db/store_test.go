@@ -10,8 +10,8 @@ import (
 
 	"github.com/willemschots/househunt/internal/auth"
 	"github.com/willemschots/househunt/internal/auth/db"
+	"github.com/willemschots/househunt/internal/db/testdb"
 	"github.com/willemschots/househunt/internal/errorz"
-	"github.com/willemschots/househunt/internal/migrate/testdb"
 )
 
 func Test_Tx_CreateUser(t *testing.T) {
@@ -373,7 +373,7 @@ func now(t *testing.T, i int) time.Time {
 func storeForTest(t *testing.T) *db.Store {
 	t.Helper()
 
-	testDB := testdb.RunTestDB(t)
+	testDB := testdb.RunWhile(t, true)
 
 	i := 0
 	return db.New(testDB, func() time.Time {
