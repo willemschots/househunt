@@ -15,7 +15,7 @@ const (
 
 var ErrInvalidToken = errors.New("invalid token")
 
-// EmailToken contains the state of a random token that is sent via email.
+// EmailToken contains the state of a token that was sent via email.
 // Such tokens should be only used once and have a limited lifetime.
 type EmailToken struct {
 	ID int
@@ -24,17 +24,17 @@ type EmailToken struct {
 	TokenHash  Argon2Hash
 	UserID     int
 	Email      email.Address
-	Purpose    EmailTokenPurpose
+	Purpose    TokenPurpose
 	CreatedAt  time.Time
 	ConsumedAt *time.Time
 }
 
-// EmailTokenPurpose represents the purpose of an email token.
-type EmailTokenPurpose string
+// TokenPurpose is the purpose of an email token.
+type TokenPurpose string
 
 const (
-	// EmailTokenPurposeActivate indicates an email token is for activating an account.
-	EmailTokenPurposeActivate EmailTokenPurpose = "activate"
+	// TokenPurposeActivate indicates a token should be used to activate an account.
+	TokenPurposeActivate TokenPurpose = "activate"
 )
 
 // Token is a random token that is sent via email.

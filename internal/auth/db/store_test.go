@@ -419,7 +419,7 @@ func testEmailToken(t *testing.T, modFunc func(*auth.EmailToken)) auth.EmailToke
 		TokenHash:  argon2Hash(t, "$argon2id$v=19$m=47104,t=1,p=1$CkX5zzYLJMWm0y/17eScyw$Qfah+NewdsdeF0+iV72mShZhRO93Qwzdj17TUZCH6ZU"),
 		UserID:     1,
 		Email:      "alice@example.com",
-		Purpose:    auth.EmailTokenPurposeActivate,
+		Purpose:    auth.TokenPurposeActivate,
 		CreatedAt:  time.Time{},
 		ConsumedAt: nil,
 	}
