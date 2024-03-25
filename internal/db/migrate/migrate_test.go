@@ -10,11 +10,12 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/willemschots/househunt/internal/db/migrate"
+	"github.com/willemschots/househunt/internal/db/testdb"
 )
 
 func Test_RunFS(t *testing.T) {
 	t.Run("ok, empty dir", func(t *testing.T) {
-		db := openSQLiteDBForTest(t)
+		db := testdb.RunUnmigratedWhile(t, true)
 
 		meta := migrate.Metadata{
 			"v1.0.0", timeRFC3339(t, "2024-03-20T14:56:00Z"),
@@ -30,7 +31,7 @@ func Test_RunFS(t *testing.T) {
 	})
 
 	t.Run("ok, subdir is skipped", func(t *testing.T) {
-		db := openSQLiteDBForTest(t)
+		db := testdb.RunUnmigratedWhile(t, true)
 
 		meta := migrate.Metadata{
 			"v1.0.0", timeRFC3339(t, "2024-03-20T14:56:00Z"),
@@ -56,7 +57,7 @@ func Test_RunFS(t *testing.T) {
 	})
 
 	t.Run("ok, progression of migrations", func(t *testing.T) {
-		db := openSQLiteDBForTest(t)
+		db := testdb.RunUnmigratedWhile(t, true)
 
 		metas := []migrate.Metadata{
 			{"v1.0.0", timeRFC3339(t, "2024-03-20T14:56:00Z")},
@@ -122,7 +123,7 @@ func Test_RunFS(t *testing.T) {
 	})
 
 	t.Run("fail, error in migration", func(t *testing.T) {
-		db := openSQLiteDBForTest(t)
+		db := testdb.RunUnmigratedWhile(t, true)
 
 		metas := []migrate.Metadata{
 			{"v1.0.0", timeRFC3339(t, "2024-03-20T14:56:00Z")},
@@ -158,7 +159,8 @@ func Test_RunFS(t *testing.T) {
 	})
 
 	t.Run("fail, migration file that was executed was removed from disk", func(t *testing.T) {
-		db := openSQLiteDBForTest(t)
+		db := testdb.RunUnmigratedWhile(t, true)
+
 		metas := []migrate.Metadata{
 			{"v1.0.0", timeRFC3339(t, "2024-03-20T14:56:00Z")},
 			{"v2.0.0", timeRFC3339(t, "2024-04-20T14:56:00Z")},
@@ -185,7 +187,8 @@ func Test_RunFS(t *testing.T) {
 	})
 
 	t.Run("fail, migration file that was executed was renamed", func(t *testing.T) {
-		db := openSQLiteDBForTest(t)
+		db := testdb.RunUnmigratedWhile(t, true)
+
 		metas := []migrate.Metadata{
 			{"v1.0.0", timeRFC3339(t, "2024-03-20T14:56:00Z")},
 			{"v2.0.0", timeRFC3339(t, "2024-04-20T14:56:00Z")},
@@ -214,29 +217,13 @@ func Test_RunFS(t *testing.T) {
 
 func Test_QueryMigrations(t *testing.T) {
 	t.Run("fail, no table", func(t *testing.T) {
-		db := openSQLiteDBForTest(t)
+		db := testdb.RunUnmigratedWhile(t, true)
 
 		_, err := migrate.QueryMigrations(context.Background(), db)
 		if !errors.Is(err, migrate.ErrNoTable) {
 			t.Fatalf("got %v, want %v (via errors.Is)", err, migrate.ErrNoTable)
 		}
 	})
-}
-
-func openSQLiteDBForTest(t *testing.T) *sql.DB {
-	db, err := sql.Open("sqlite3", ":memory:?_foreign_keys=on")
-	if err != nil {
-		t.Fatalf("failed to open database: %v", err)
-	}
-
-	t.Cleanup(func() {
-		err := db.Close()
-		if err != nil {
-			t.Errorf("failed to close database: %v", err)
-		}
-	})
-
-	return db
 }
 
 func assertTable(t *testing.T, db *sql.DB, want []migrate.Migration) {
