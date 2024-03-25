@@ -27,7 +27,7 @@ func Test_Token_GenerateToken(t *testing.T) {
 		}
 
 		if len(tok) != 32 {
-			t.Fatalf("got %d want %d", len(tok), 32)
+			t.Fatalf("got %d want %d tok(%v)", len(tok), 32, tok)
 		}
 	})
 }
