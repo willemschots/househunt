@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
 	"fmt"
 	"strings"
@@ -116,4 +118,43 @@ func (h *Argon2Hash) Scan(v any) error {
 	*h = parsed
 
 	return nil
+}
+
+func hashBytes(b []byte) (Argon2Hash, error) {
+	// First we generate a salt.
+	salt, err := genRandomBytes(saltLen)
+	if err != nil {
+		return Argon2Hash{}, fmt.Errorf("failed to generate salt: %w", err)
+	}
+
+	// Then we hash the password.
+	hash := argon2.IDKey(b, salt, iterations, memoryKiB, parallelism, keyLen)
+
+	return Argon2Hash{
+		Variant:     variant,
+		Version:     argon2.Version,
+		MemoryKiB:   memoryKiB,
+		Iterations:  iterations,
+		Parallelism: parallelism,
+		Salt:        salt,
+		Hash:        hash,
+	}, nil
+}
+
+func matchHash(h Argon2Hash, b []byte) bool {
+	// Hash the plaintext password with the same parameters as the provided hash.
+	other := argon2.IDKey(b, h.Salt, h.Iterations, h.MemoryKiB, h.Parallelism, uint32(len(h.Hash)))
+
+	// compare the two hashes in constant time to avoid timing attacks.
+	return subtle.ConstantTimeCompare(other, h.Hash) == 1
+}
+
+func genRandomBytes(n int) ([]byte, error) {
+	b := make([]byte, n)
+	_, err := rand.Read(b)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read random bytes: %w", err)
+	}
+
+	return b, nil
 }

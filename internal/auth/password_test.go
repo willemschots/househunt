@@ -11,7 +11,7 @@ import (
 	"github.com/willemschots/househunt/internal/auth"
 )
 
-func Test_ParseHashMatchPassword(t *testing.T) {
+func Test_Password_ParseHashMatch(t *testing.T) {
 	for name, tc := range passwordTests() {
 		t.Run(name, func(t *testing.T) {
 			pwd, err := auth.ParsePassword(tc.raw)
