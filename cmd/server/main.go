@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	"github.com/willemschots/househunt/assets"
+	"github.com/willemschots/househunt/internal"
 	"github.com/willemschots/househunt/internal/web"
 	"github.com/willemschots/househunt/internal/web/view"
 	"golang.org/x/sync/errgroup"
@@ -56,7 +57,12 @@ func run(ctx context.Context, w io.Writer) int {
 	g, gCtx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		logger.Info("starting http server", "addr", cfg.http.addr)
+		logger.Info("starting http server",
+			"addr", cfg.http.addr,
+			"buildRevision", internal.BuildRevision,
+			"buildRevisionTime", internal.BuildRevisionTime,
+			"buildLocalModified", internal.BuildLocalModified,
+		)
 		// ListenAndServe always returns a non-nil error,
 		// g will cancel gCtx when an error is returned, so
 		// this will also stop the other goroutine.
