@@ -22,11 +22,14 @@ COPY ./ ./
 # Build the binary.
 RUN CGO_ENABLED=1 go build -o /out/server cmd/server/*.go
 
+# Use ldd to list the dynamicly linked dependencies and copy them to the output directory.
+RUN ldd /out/server | tr -s [:blank:] '\n' | grep ^/ | xargs -I % install -D % /out/%
+
 # Stage 2. Run the binary.
 FROM scratch AS final
 
 # Copy binary 
-COPY --from=build /out/server /server
+COPY --from=build /out /
 
 # Copy certificates
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
