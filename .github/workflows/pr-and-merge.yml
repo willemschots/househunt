@@ -35,4 +35,6 @@ jobs:
       uses: golangci/golangci-lint-action@v4
       with:
         version: 'v1.56'
+    - name: Verify schema dump is up to date
+      run: make dump-schema && git diff --exit-code migrations/docs/schema.gen.sql
 

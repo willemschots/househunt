@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/willemschots/househunt/internal/db/migrate"
 	"github.com/willemschots/househunt/internal/db/testdb"
 )
