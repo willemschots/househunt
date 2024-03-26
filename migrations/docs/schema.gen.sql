@@ -1,0 +1,24 @@
+CREATE TABLE migrations (
+	sequence    INTEGER PRIMARY KEY,
+	filename    TEXT NOT NULL,
+	app_version TEXT NOT NULL,
+	timestamp   TIMESTAMP NOT NULL
+);
+CREATE TABLE users(
+    id            INTEGER PRIMARY KEY,
+    email         TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    is_active     INTEGER NOT NULL,
+    created_at    TIMESTAMP NOT NULL,
+    updated_at    TIMESTAMP NOT NULL
+);
+CREATE TABLE email_tokens (
+    id          INTEGER PRIMARY KEY,
+    token_hash  TEXT NOT NULL,
+    user_id     INTEGER NOT NULL,
+    email       TEXT NOT NULL,
+    purpose     TEXT NOT NULL,
+    created_at  TIMESTAMP NOT NULL,
+    consumed_at TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+);
