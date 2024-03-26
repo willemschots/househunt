@@ -22,22 +22,22 @@ type Migration struct {
 func (m Migration) Equal(other Migration) bool {
 	return m.Sequence == other.Sequence &&
 		m.Filename == other.Filename &&
-		m.Metadata.AppVersion == other.Metadata.AppVersion &&
-		m.Metadata.Timestamp.Equal(other.Metadata.Timestamp)
+		m.Metadata.Revision == other.Metadata.Revision &&
+		m.Metadata.RevisionTimestamp.Equal(other.Metadata.RevisionTimestamp)
 }
 
 // Metadata contains metadata about a migration.
 // If something does go wrong, this will help with debugging.
 type Metadata struct {
-	AppVersion string
-	Timestamp  time.Time
+	Revision          string
+	RevisionTimestamp time.Time
 }
 
 const migrationsTableQuery = `CREATE TABLE IF NOT EXISTS migrations (
-	sequence    INTEGER PRIMARY KEY,
-	filename    TEXT NOT NULL,
-	app_version TEXT NOT NULL,
-	timestamp   TIMESTAMP NOT NULL
+	sequence           INTEGER PRIMARY KEY,
+	filename           TEXT NOT NULL,
+	revision           TEXT NOT NULL,
+	revision_timestamp TIMESTAMP NOT NULL
 )
 `
 
@@ -131,7 +131,7 @@ func migrate(tx *sql.Tx, ranBefore []Migration, files []file, meta Metadata) ([]
 	}
 
 	// prepare the insert statement.
-	stmt, err := tx.Prepare(`INSERT INTO migrations (sequence, filename, app_version, timestamp) VALUES (?, ?, ?, ?)`)
+	stmt, err := tx.Prepare(`INSERT INTO migrations (sequence, filename, revision, revision_timestamp) VALUES (?, ?, ?, ?)`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to prepare insert statement: %w", err)
 	}
@@ -160,7 +160,7 @@ func migrate(tx *sql.Tx, ranBefore []Migration, files []file, meta Metadata) ([]
 
 		ranNow = append(ranNow, m)
 
-		_, err = stmt.Exec(m.Sequence, m.Filename, m.Metadata.AppVersion, m.Metadata.Timestamp)
+		_, err = stmt.Exec(m.Sequence, m.Filename, m.Metadata.Revision, m.Metadata.RevisionTimestamp)
 		if err != nil {
 			return nil, fmt.Errorf("failed to insert migration: %w", err)
 		}
@@ -178,7 +178,7 @@ func QueryMigrations(ctx context.Context, db *sql.DB) ([]Migration, error) {
 }
 
 func queryWith(rowsFunc func(q string) (*sql.Rows, error)) ([]Migration, error) {
-	const q = `SELECT sequence, filename, app_version, timestamp FROM migrations ORDER BY sequence`
+	const q = `SELECT sequence, filename, revision, revision_timestamp FROM migrations ORDER BY sequence`
 	rows, err := rowsFunc(q)
 	if err != nil {
 		if strings.Contains(err.Error(), "no such table") {
@@ -191,7 +191,7 @@ func queryWith(rowsFunc func(q string) (*sql.Rows, error)) ([]Migration, error) 
 	migrations := make([]Migration, 0)
 	for rows.Next() {
 		var m Migration
-		err := rows.Scan(&m.Sequence, &m.Filename, &m.Metadata.AppVersion, &m.Metadata.Timestamp)
+		err := rows.Scan(&m.Sequence, &m.Filename, &m.Metadata.Revision, &m.Metadata.RevisionTimestamp)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan migration: %w", err)
 		}

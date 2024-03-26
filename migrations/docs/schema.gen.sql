@@ -1,8 +1,8 @@
 CREATE TABLE migrations (
-	sequence    INTEGER PRIMARY KEY,
-	filename    TEXT NOT NULL,
-	app_version TEXT NOT NULL,
-	timestamp   TIMESTAMP NOT NULL
+	sequence           INTEGER PRIMARY KEY,
+	filename           TEXT NOT NULL,
+	revision           TEXT NOT NULL,
+	revision_timestamp TIMESTAMP NOT NULL
 );
 CREATE TABLE users(
     id            INTEGER PRIMARY KEY,

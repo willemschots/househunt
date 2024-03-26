@@ -20,16 +20,16 @@ RUN go mod download
 COPY ./ ./
 
 # Build the server binary.
-RUN CGO_ENABLED=1 go build -o /out/server/server cmd/server/*.go
+RUN CGO_ENABLED=1 go build -o /out/server ./cmd/server
 
-# Use ldd to list the dynamicly linked dependencies and copy them to the output directory.
-RUN ldd /out/server/server | tr -s [:blank:] '\n' | grep ^/ | xargs -I % install -D % /out/server/%
+# Use ldd to list the dynamically linked dependencies and copy them to the output directory.
+RUN ldd /out/server | tr -s [:blank:] '\n' | grep ^/ | xargs -I % install -D % /out/%
 
 # Build the dbmigrate binary.
-RUN CGO_ENABLED=1 go build -o /out/dbmigrate/dbmigrate cmd/dbmigrate/*.go
+RUN CGO_ENABLED=1 go build -o /out/dbmigrate ./cmd/dbmigrate
 
-# Use ldd to list the dynamicly linked dependencies and copy them to the output directory.
-RUN ldd /out/dbmigrate/dbmigrate | tr -s [:blank:] '\n' | grep ^/ | xargs -I % install -D % /out/dbmigrate/%
+# Use ldd to list the dynamically linked dependencies and copy them to the output directory.
+RUN ldd /out/dbmigrate | tr -s [:blank:] '\n' | grep ^/ | xargs -I % install -D % /out/%
 
 # Stage 2. Run the binary.
 FROM scratch AS final
@@ -46,4 +46,4 @@ COPY --from=build /etc/passwd /etc/passwd
 USER househunt
 
 # Run the binary.
-ENTRYPOINT ["/out/server/server"]
+ENTRYPOINT ["./server"]

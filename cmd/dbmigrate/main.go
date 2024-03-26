@@ -32,17 +32,8 @@ func main() {
 	defer cancel()
 
 	meta := migrate.Metadata{
-		AppVersion: internal.BuildCommit,
-	}
-
-	if internal.BuildTimestamp != "" {
-		ts, err := time.Parse(time.RFC3339, internal.BuildTimestamp)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "failed to parse build timestamp: %v\n", err)
-			os.Exit(1)
-		}
-
-		meta.Timestamp = ts
+		Revision:          internal.BuildRevision,
+		RevisionTimestamp: internal.BuildRevisionTime,
 	}
 
 	migrations, err := migrate.RunFS(ctx, sqlDB, migrations.FS, meta)
