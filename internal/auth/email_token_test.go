@@ -132,9 +132,9 @@ func Test_Token_PreventExposure(t *testing.T) {
 			t.Fatalf("failed to generate token: %v", err)
 		}
 
-		buf := &bytes.Buffer{}
+		var buf bytes.Buffer
 
-		logger := slog.New(slog.NewTextHandler(buf, nil))
+		logger := slog.New(slog.NewTextHandler(&buf, nil))
 
 		logger.Info("attempting to log a password", "password", tok)
 

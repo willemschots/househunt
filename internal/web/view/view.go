@@ -22,12 +22,14 @@ type View struct {
 }
 
 // Parse parses the file system and returns a view for the given name.
+// fs is expected to contain the specified view files in the root directory.
 func Parse(viewFS fs.FS, name string) (*View, error) {
-	// Validate the filename, just to be sure.
+	// Validate the view name, just to be sure.
 	//
 	// Generally these will be hardcoded, but if for some reason we end
-	// up with user input as a filename, we don't want to allow them
-	// access to the filesystem.
+	// up with user input as a view name, we want to error. These view names
+	// are used to construct filenames and we don't want to inadvertently
+	// allow directory traversal.
 	if err := validateName(name); err != nil {
 		return nil, err
 	}

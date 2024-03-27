@@ -73,15 +73,15 @@ func TestView_ParseAndRender(t *testing.T) {
 
 	for name, tc := range okTests {
 		t.Run(name, func(t *testing.T) {
-			tempFS := tempFilesForTest(t, tc.files)
+			tempFS := tempTestFS(t, tc.files)
 
 			v, err := view.Parse(tempFS, tc.name)
 			if err != nil {
 				t.Fatalf("unexpected error parsing view: %v", err)
 			}
 
-			buf := &bytes.Buffer{}
-			err = v.Render(buf, tc.data)
+			var buf bytes.Buffer
+			err = v.Render(&buf, tc.data)
 			if err != nil {
 				t.Fatalf("unexpected error rendering view: %v", err)
 			}
@@ -125,7 +125,7 @@ func TestView_ParseAndRender(t *testing.T) {
 
 	for name, tc := range parseFails {
 		t.Run(name, func(t *testing.T) {
-			tempFS := tempFilesForTest(t, tc.files)
+			tempFS := tempTestFS(t, tc.files)
 
 			_, err := view.Parse(tempFS, tc.name)
 			if err == nil {
@@ -135,10 +135,10 @@ func TestView_ParseAndRender(t *testing.T) {
 	}
 }
 
-func tempFilesForTest(t *testing.T, files map[string]string) fs.FS {
+func tempTestFS(t *testing.T, files map[string]string) fs.FS {
 	t.Helper()
 
-	dir, err := os.MkdirTemp("", "househunt_view_test")
+	dir, err := os.MkdirTemp("", "househunt_web_view_test")
 	if err != nil {
 		t.Fatalf("failed to create temporary directory for views: %v", err)
 	}
