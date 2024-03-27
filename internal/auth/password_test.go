@@ -127,9 +127,9 @@ func Test_Password_PreventExposure(t *testing.T) {
 	})
 
 	t.Run("ok, log output", func(t *testing.T) {
-		buf := &bytes.Buffer{}
+		var buf bytes.Buffer
 
-		logger := slog.New(slog.NewTextHandler(buf, nil))
+		logger := slog.New(slog.NewTextHandler(&buf, nil))
 
 		logger.Info("attempting to log a password", "password", pwd)
 

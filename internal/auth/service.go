@@ -108,8 +108,12 @@ func (s *Service) createNewUser(ctx context.Context, user User) {
 	}
 
 	s.inTx(ctx, func(tx Tx) error {
+		// TODO: Limit nr of tokens per user.
+
 		_, err := tx.FindUserByEmail(user.Email)
 		if err == nil {
+			// TODO: Check if the user is active.
+			// Only return an error if the user is active.
 			return ErrDuplicateAccount
 		}
 
