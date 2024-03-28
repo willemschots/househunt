@@ -55,12 +55,8 @@ func (p Password) Hash() (Argon2Hash, error) {
 	return hashBytes(p.plain)
 }
 
-func (p Password) String() string {
-	return SecretMarker
-}
-
-func (p Password) GoString() string {
-	return SecretMarker
+func (p Password) Format(f fmt.State, verb rune) {
+	f.Write([]byte(SecretMarker))
 }
 
 func (p Password) MarshalText() ([]byte, error) {
