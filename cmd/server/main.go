@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"io"
-	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -33,14 +32,7 @@ func run(ctx context.Context, w io.Writer) int {
 		return 1
 	}
 
-	// Create a new file system from the assets.
-	templatesFS, err := fs.Sub(assets.TemplateFS, "templates")
-	if err != nil {
-		logger.Error("failed to subtree template file system", "error", err)
-		return 1
-	}
-
-	viewRenderer := view.NewFSRenderer(templatesFS)
+	viewRenderer := view.NewFSRenderer(assets.TemplateFS)
 
 	srv := &http.Server{
 		Addr:         cfg.http.addr,
