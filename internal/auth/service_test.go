@@ -7,15 +7,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/willemschots/househunt/assets"
 	"github.com/willemschots/househunt/internal/auth"
 	"github.com/willemschots/househunt/internal/auth/db"
 	"github.com/willemschots/househunt/internal/db/testdb"
 	"github.com/willemschots/househunt/internal/email"
+	"github.com/willemschots/househunt/internal/email/view"
 	"github.com/willemschots/househunt/internal/errorz/testerr"
 )
 
 func Test_Service_RegisterAccount(t *testing.T) {
-	setup := func(t *testing.T) (*auth.Service, *errList) {
+	setup := func(t *testing.T) (*auth.Service, *email.MemorySender, *errList) {
 		store := db.New(testdb.RunWhile(t, true), func() time.Time {
 			return time.Now().Round(0)
 		})
@@ -25,12 +27,13 @@ func Test_Service_RegisterAccount(t *testing.T) {
 			errs:  make([]error, 0),
 		}
 
-		svc := auth.NewService(store, errs.AppendErr, time.Second)
+		emailSvc, sender := emailSvc()
+		svc := auth.NewService(store, emailSvc, errs.AppendErr, time.Second)
 
-		return svc, errs
+		return svc, sender, errs
 	}
 
-	setupFailingStore := func(t *testing.T, dep *testerr.FailingDep) (*auth.Service, *errList) {
+	setupFailingStore := func(t *testing.T, dep *testerr.FailingDep) (*auth.Service, *email.MemorySender, *errList) {
 		store := &failingStore{
 			store: db.New(testdb.RunWhile(t, true), func() time.Time {
 				return time.Now().Round(0)
@@ -43,14 +46,14 @@ func Test_Service_RegisterAccount(t *testing.T) {
 			errs:  make([]error, 0),
 		}
 
-		svc := auth.NewService(store, errs.AppendErr, time.Second)
+		emailSvc, sender := emailSvc()
+		svc := auth.NewService(store, emailSvc, errs.AppendErr, time.Second)
 
-		return svc, errs
-
+		return svc, sender, errs
 	}
 
 	t.Run("ok, register account", func(t *testing.T) {
-		svc, errs := setup(t)
+		svc, sender, errs := setup(t)
 
 		credentials := auth.Credentials{
 			Email:    emailAddress(t, "test@example.com"),
@@ -66,11 +69,17 @@ func Test_Service_RegisterAccount(t *testing.T) {
 
 		errs.assertNoError(t)
 
-		// TODO: Assert that an email was send to the email address.
+		// Assert that an email was send to the email address.
+		if len(sender.Emails) != 1 || sender.Emails[0].Recipient != credentials.Email {
+			t.Fatalf("expected 1 email to %s, got %d", credentials.Email, len(sender.Emails))
+		}
 	})
 
+	// TODO: Add case "ok, re-register non-activated account"
+
+	// TODO: Replace test below with "fail, async re-register activated account"
 	t.Run("fail async, register account with same email", func(t *testing.T) {
-		svc, errs := setup(t)
+		svc, sender, errs := setup(t)
 
 		credentials := auth.Credentials{
 			Email:    emailAddress(t, "test@example.com"),
@@ -93,12 +102,17 @@ func Test_Service_RegisterAccount(t *testing.T) {
 		// However, it does output an error to the err handler.
 		errs.assertErrorIs(t, auth.ErrDuplicateAccount)
 
-		// TODO: Assert only a single email was send.
+		// Assert only a single email was send.
+		if len(sender.Emails) != 1 {
+			t.Fatalf("expected 1 emails, got %d", len(sender.Emails))
+		}
 	})
 
+	// TODO: add case "fail async, too many registration requests"
+
 	for _, dep := range testerr.NewFailingDeps(testerr.Err, 5) {
-		t.Run("fail, dependency fails", func(t *testing.T) {
-			svc, errs := setupFailingStore(t, &dep)
+		t.Run("fail, store fails", func(t *testing.T) {
+			svc, sender, errs := setupFailingStore(t, &dep)
 
 			credentials := auth.Credentials{
 				Email:    emailAddress(t, "test@example.com"),
@@ -114,7 +128,10 @@ func Test_Service_RegisterAccount(t *testing.T) {
 
 			errs.assertErrorIs(t, testerr.Err)
 
-			// TODO: Assert no email was sent.
+			// Assert no email was send.
+			if len(sender.Emails) != 0 {
+				t.Fatalf("expected 0 emails, got %d", len(sender.Emails))
+			}
 		})
 	}
 }
@@ -176,6 +193,13 @@ func password(t *testing.T, raw string) auth.Password {
 	}
 
 	return p
+}
+
+func emailSvc() (*email.Service, *email.MemorySender) {
+	sender := &email.MemorySender{}
+	renderer := view.NewFSRenderer(assets.EmailFS)
+	emailSvc := email.NewService(email.Address("sender@example.com"), renderer, sender)
+	return emailSvc, sender
 }
 
 // failingStore wraps a real store but fails on specific calls.

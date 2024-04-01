@@ -70,7 +70,7 @@ func Test_Password_ParseHashMatch(t *testing.T) {
 			Hash:        mustHexDecodeString(t, "655ad15eac652dc59f7170a7332bf49b8469be1fdb9c28bb"),
 		}
 
-		pwd, err := auth.ParsePassword(string([]byte("password")))
+		pwd, err := auth.ParsePassword("password")
 		if err != nil {
 			t.Fatalf("failed to parse password: %v", err)
 		}

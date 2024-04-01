@@ -1,0 +1,9 @@
+{{ block "subject" . }}Please confirm your email address{{ end }}
+{{ block "body" . }}
+Before we can activate your account and allow you to log in, we need to verify your email address.
+
+Please click the following link to confirm your email address:
+
+https://examplego.com/account-activations?id={{.ID}}&token={{ .Token }}
+
+{{ end }}
