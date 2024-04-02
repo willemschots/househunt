@@ -17,14 +17,14 @@ import (
 
 func Test_Tx_CreateUser(t *testing.T) {
 	t.Run("ok, create user", inTx(func(t *testing.T, tx auth.Tx) {
-		user := testUser(t, nil)
+		user := newUser(t, nil)
 
 		err := tx.CreateUser(&user)
 		if err != nil {
 			t.Fatalf("failed to save user: %v", err)
 		}
 
-		want := testUser(t, func(u *auth.User) {
+		want := newUser(t, func(u *auth.User) {
 			// The store should set the following fields of user.
 			u.ID = 1
 			u.CreatedAt = now(t, 0)
@@ -39,13 +39,13 @@ func Test_Tx_CreateUser(t *testing.T) {
 	}))
 
 	t.Run("fail, email constraint violated", inTx(func(t *testing.T, tx auth.Tx) {
-		user1 := testUser(t, nil)
+		user1 := newUser(t, nil)
 		err := tx.CreateUser(&user1)
 		if err != nil {
 			t.Fatalf("failed to save user: %v", err)
 		}
 
-		user2 := testUser(t, nil)
+		user2 := newUser(t, nil)
 		err = tx.CreateUser(&user2)
 		if !errors.Is(err, errorz.ErrConstraintViolated) {
 			t.Fatalf("expected errors to be %v got %v (via errors.Is)", errorz.ErrConstraintViolated, err)
@@ -53,7 +53,7 @@ func Test_Tx_CreateUser(t *testing.T) {
 	}))
 
 	t.Run("fail, non zero ID", inTx(func(t *testing.T, tx auth.Tx) {
-		user := testUser(t, func(u *auth.User) {
+		user := newUser(t, func(u *auth.User) {
 			u.ID = 1
 		})
 
@@ -65,23 +65,22 @@ func Test_Tx_CreateUser(t *testing.T) {
 }
 
 func Test_Tx_UpdateUser(t *testing.T) {
-
-	setupPrereqs := func(t *testing.T, tx auth.Tx) auth.User {
-		user := testUser(t, nil)
+	setup := func(t *testing.T, tx auth.Tx) auth.User {
+		user := newUser(t, nil)
 		err := tx.CreateUser(&user)
 		if err != nil {
 			t.Fatalf("failed to save user: %v", err)
 		}
 
 		return user
-
 	}
+
 	t.Run("ok, update user", inTx(func(t *testing.T, tx auth.Tx) {
-		user := setupPrereqs(t, tx)
+		user := setup(t, tx)
 
 		// Update all fields that can be modified.
-		user.Email = "jacob@example.com"
-		user.PasswordHash = argon2Hash(t, "$argon2id$v=19$m=47104,t=1,p=1$CkX5zzYLJMWm0y/17eScyw$Qfah+NewdsdeF0+iV72mShZhRO93Qwzdj17TUZCH6ZU")
+		user.Email = must(email.ParseAddress("jacob@example.com"))
+		user.PasswordHash = must(auth.ParseArgon2Hash("$argon2id$v=19$m=47104,t=1,p=1$CkX5zzYLJMWm0y/17eScyw$Qfah+NewdsdeF0+iV72mShZhRO93Qwzdj17TUZCH6ZU"))
 		user.IsActive = true
 
 		err := tx.UpdateUser(&user)
@@ -89,10 +88,10 @@ func Test_Tx_UpdateUser(t *testing.T) {
 			t.Fatalf("failed to save user: %v", err)
 		}
 
-		want := testUser(t, func(u *auth.User) {
+		want := newUser(t, func(u *auth.User) {
 			u.ID = 1
-			u.Email = "jacob@example.com"
-			u.PasswordHash = argon2Hash(t, "$argon2id$v=19$m=47104,t=1,p=1$CkX5zzYLJMWm0y/17eScyw$Qfah+NewdsdeF0+iV72mShZhRO93Qwzdj17TUZCH6ZU")
+			u.Email = must(email.ParseAddress("jacob@example.com"))
+			u.PasswordHash = must(auth.ParseArgon2Hash("$argon2id$v=19$m=47104,t=1,p=1$CkX5zzYLJMWm0y/17eScyw$Qfah+NewdsdeF0+iV72mShZhRO93Qwzdj17TUZCH6ZU"))
 			u.IsActive = true
 			u.CreatedAt = now(t, 0)
 			u.UpdatedAt = now(t, 1) // The store should update the UpdatedAt field.
@@ -106,9 +105,9 @@ func Test_Tx_UpdateUser(t *testing.T) {
 	}))
 
 	t.Run("fail, not found", inTx(func(t *testing.T, tx auth.Tx) {
-		setupPrereqs(t, tx)
+		setup(t, tx)
 
-		user2 := testUser(t, func(u *auth.User) {
+		user2 := newUser(t, func(u *auth.User) {
 			u.ID = 2
 		})
 
@@ -119,10 +118,10 @@ func Test_Tx_UpdateUser(t *testing.T) {
 	}))
 
 	t.Run("fail, change email to an existing email", inTx(func(t *testing.T, tx auth.Tx) {
-		user1 := setupPrereqs(t, tx)
+		user1 := setup(t, tx)
 
-		user2 := testUser(t, func(u *auth.User) {
-			u.Email = "jacob@example.com"
+		user2 := newUser(t, func(u *auth.User) {
+			u.Email = must(email.ParseAddress("jacob@example.com"))
 		})
 
 		err := tx.CreateUser(&user2)
@@ -142,13 +141,13 @@ func Test_Tx_UpdateUser(t *testing.T) {
 func Test_Tx_FindUser(t *testing.T) {
 	setupUsers := func(t *testing.T, tx auth.Tx) []auth.User {
 		users := []auth.User{
-			testUser(t, nil),
-			testUser(t, func(u *auth.User) {
-				u.Email = "jacob@example.com"
+			newUser(t, nil),
+			newUser(t, func(u *auth.User) {
+				u.Email = must(email.ParseAddress("jacob@example.com"))
 				u.IsActive = true
 			}),
-			testUser(t, func(u *auth.User) {
-				u.Email = "eva@example.com"
+			newUser(t, func(u *auth.User) {
+				u.Email = must(email.ParseAddress("eva@example.com"))
 			}),
 		}
 
@@ -205,7 +204,7 @@ func Test_Tx_FindUser(t *testing.T) {
 		"ok, one by email": {
 			filter: &auth.UserFilter{
 				Emails: []email.Address{
-					email.Address("jacob@example.com"),
+					must(email.ParseAddress("jacob@example.com")),
 				},
 			},
 			wantFunc: func(users []auth.User) []auth.User {
@@ -215,8 +214,8 @@ func Test_Tx_FindUser(t *testing.T) {
 		"ok, several by email": {
 			filter: &auth.UserFilter{
 				Emails: []email.Address{
-					email.Address("jacob@example.com"),
-					email.Address("eva@example.com"),
+					must(email.ParseAddress("jacob@example.com")),
+					must(email.ParseAddress("eva@example.com")),
 				},
 			},
 			wantFunc: func(users []auth.User) []auth.User {
@@ -227,8 +226,10 @@ func Test_Tx_FindUser(t *testing.T) {
 		},
 		"ok, combine filters": {
 			filter: &auth.UserFilter{
-				IDs:      []int{1, 3},
-				Emails:   []email.Address{email.Address("alice@example.com")},
+				IDs: []int{1, 3},
+				Emails: []email.Address{
+					must(email.ParseAddress("alice@example.com")),
+				},
 				IsActive: ptr(false),
 			},
 			wantFunc: func(users []auth.User) []auth.User {
@@ -270,8 +271,8 @@ func Test_Tx_FindUser(t *testing.T) {
 }
 
 func Test_Tx_CreateEmailToken(t *testing.T) {
-	setupPrereqs := func(t *testing.T, tx auth.Tx) auth.User {
-		user := testUser(t, nil)
+	setup := func(t *testing.T, tx auth.Tx) auth.User {
+		user := newUser(t, nil)
 		err := tx.CreateUser(&user)
 		if err != nil {
 			t.Fatalf("failed to save user: %v", err)
@@ -281,16 +282,16 @@ func Test_Tx_CreateEmailToken(t *testing.T) {
 	}
 
 	t.Run("ok, create email token", inTx(func(t *testing.T, tx auth.Tx) {
-		setupPrereqs(t, tx)
+		_ = setup(t, tx)
 
-		token := testEmailToken(t, nil)
+		token := newEmailToken(t, nil)
 
 		err := tx.CreateEmailToken(&token)
 		if err != nil {
 			t.Fatalf("failed to save email token: %v", err)
 		}
 
-		want := testEmailToken(t, func(tok *auth.EmailToken) {
+		want := newEmailToken(t, func(tok *auth.EmailToken) {
 			tok.ID = 1
 			tok.CreatedAt = now(t, 1)
 		})
@@ -303,9 +304,9 @@ func Test_Tx_CreateEmailToken(t *testing.T) {
 	}))
 
 	t.Run("fail, user foreign key does not exist", inTx(func(t *testing.T, tx auth.Tx) {
-		setupPrereqs(t, tx)
+		setup(t, tx)
 
-		token := testEmailToken(t, func(tok *auth.EmailToken) {
+		token := newEmailToken(t, func(tok *auth.EmailToken) {
 			tok.UserID = 101
 		})
 
@@ -316,9 +317,9 @@ func Test_Tx_CreateEmailToken(t *testing.T) {
 	}))
 
 	t.Run("fail, non zero ID", inTx(func(t *testing.T, tx auth.Tx) {
-		setupPrereqs(t, tx)
+		setup(t, tx)
 
-		token := testEmailToken(t, func(tok *auth.EmailToken) {
+		token := newEmailToken(t, func(tok *auth.EmailToken) {
 			tok.ID = 1
 		})
 
@@ -330,14 +331,14 @@ func Test_Tx_CreateEmailToken(t *testing.T) {
 }
 
 func Test_Tx_UpdateEmailToken(t *testing.T) {
-	setupPrereqs := func(t *testing.T, tx auth.Tx) (auth.User, auth.EmailToken) {
-		user := testUser(t, nil)
+	setup := func(t *testing.T, tx auth.Tx) (auth.User, auth.EmailToken) {
+		user := newUser(t, nil)
 		err := tx.CreateUser(&user)
 		if err != nil {
 			t.Fatalf("failed to save user: %v", err)
 		}
 
-		token := testEmailToken(t, nil)
+		token := newEmailToken(t, nil)
 		err = tx.CreateEmailToken(&token)
 		if err != nil {
 			t.Fatalf("failed to save email token: %v", err)
@@ -347,7 +348,7 @@ func Test_Tx_UpdateEmailToken(t *testing.T) {
 	}
 
 	t.Run("ok, update email token", inTx(func(t *testing.T, tx auth.Tx) {
-		_, token := setupPrereqs(t, tx)
+		_, token := setup(t, tx)
 
 		consumedAt := now(t, 9)
 		token.ConsumedAt = &consumedAt
@@ -357,7 +358,7 @@ func Test_Tx_UpdateEmailToken(t *testing.T) {
 			t.Fatalf("failed to save email token: %v", err)
 		}
 
-		want := testEmailToken(t, func(tok *auth.EmailToken) {
+		want := newEmailToken(t, func(tok *auth.EmailToken) {
 			tok.ID = 1
 			tok.CreatedAt = now(t, 1)
 			consumedAtOther := now(t, 9)
@@ -369,13 +370,13 @@ func Test_Tx_UpdateEmailToken(t *testing.T) {
 
 	immutableFields := map[string]func(*auth.EmailToken, auth.User){
 		"TokenHash": func(tok *auth.EmailToken, _ auth.User) {
-			tok.TokenHash = argon2Hash(t, "$argon2id$v=19$m=47104,t=1,p=1$vP9U4C5jsOzFQLj0gvUkYw$YLrSb2dGfcVohlm8syynqHs6/NHxXS9rt/t6TjL7pi0")
+			tok.TokenHash = must(auth.ParseArgon2Hash("$argon2id$v=19$m=47104,t=1,p=1$vP9U4C5jsOzFQLj0gvUkYw$YLrSb2dGfcVohlm8syynqHs6/NHxXS9rt/t6TjL7pi0"))
 		},
 		"UserID": func(tok *auth.EmailToken, user2 auth.User) {
 			tok.UserID = user2.ID
 		},
 		"Email": func(tok *auth.EmailToken, _ auth.User) {
-			tok.Email = "jacob@example.com"
+			tok.Email = must(email.ParseAddress("jacob@example.com"))
 		},
 		"Purpose": func(tok *auth.EmailToken, _ auth.User) {
 			tok.Purpose = "other" // TODO: use a constant once we have one.
@@ -384,10 +385,10 @@ func Test_Tx_UpdateEmailToken(t *testing.T) {
 
 	for field, modFunc := range immutableFields {
 		t.Run(fmt.Sprintf("fail, immutable field %s", field), inTxBadState(func(t *testing.T, tx auth.Tx) {
-			_, token := setupPrereqs(t, tx)
+			_, token := setup(t, tx)
 
 			// Create second user so we don't error on foreign key constraint.
-			user2 := testUser(t, func(u *auth.User) {
+			user2 := newUser(t, func(u *auth.User) {
 				u.Email = "jacob@example.com"
 			})
 			err := tx.CreateUser(&user2)
@@ -405,7 +406,7 @@ func Test_Tx_UpdateEmailToken(t *testing.T) {
 	}
 
 	t.Run("fail, not found", inTx(func(t *testing.T, tx auth.Tx) {
-		_, token := setupPrereqs(t, tx)
+		_, token := setup(t, tx)
 
 		token.ID = 2
 		err := tx.UpdateEmailToken(&token)
@@ -471,6 +472,7 @@ func inTxBadState(f func(*testing.T, auth.Tx)) func(t *testing.T) {
 
 func now(t *testing.T, i int) time.Time {
 	t.Helper()
+
 	if i > 9 {
 		t.Fatalf("invalid time index: %d", i)
 	}
@@ -496,24 +498,13 @@ func storeForTest(t *testing.T) *db.Store {
 	})
 }
 
-func argon2Hash(t *testing.T, raw string) auth.Argon2Hash {
-	t.Helper()
-
-	hash, err := auth.ParseArgon2Hash(raw)
-	if err != nil {
-		t.Fatalf("failed to parse hash: %v", err)
-	}
-
-	return hash
-}
-
-func testUser(t *testing.T, modFunc func(*auth.User)) auth.User {
+func newUser(t *testing.T, modFunc func(*auth.User)) auth.User {
 	t.Helper()
 
 	u := auth.User{
 		ID:           0,
-		Email:        "alice@example.com",
-		PasswordHash: argon2Hash(t, "$argon2id$v=19$m=47104,t=1,p=1$vP9U4C5jsOzFQLj0gvUkYw$YLrSb2dGfcVohlm8syynqHs6/NHxXS9rt/t6TjL7pi0"),
+		Email:        must(email.ParseAddress("alice@example.com")),
+		PasswordHash: must(auth.ParseArgon2Hash("$argon2id$v=19$m=47104,t=1,p=1$vP9U4C5jsOzFQLj0gvUkYw$YLrSb2dGfcVohlm8syynqHs6/NHxXS9rt/t6TjL7pi0")),
 		CreatedAt:    time.Time{},
 		UpdatedAt:    time.Time{},
 	}
@@ -525,13 +516,13 @@ func testUser(t *testing.T, modFunc func(*auth.User)) auth.User {
 	return u
 }
 
-func testEmailToken(t *testing.T, modFunc func(*auth.EmailToken)) auth.EmailToken {
+func newEmailToken(t *testing.T, modFunc func(*auth.EmailToken)) auth.EmailToken {
 	t.Helper()
 
 	tok := auth.EmailToken{
-		TokenHash:  argon2Hash(t, "$argon2id$v=19$m=47104,t=1,p=1$CkX5zzYLJMWm0y/17eScyw$Qfah+NewdsdeF0+iV72mShZhRO93Qwzdj17TUZCH6ZU"),
+		TokenHash:  must(auth.ParseArgon2Hash("$argon2id$v=19$m=47104,t=1,p=1$CkX5zzYLJMWm0y/17eScyw$Qfah+NewdsdeF0+iV72mShZhRO93Qwzdj17TUZCH6ZU")),
 		UserID:     1,
-		Email:      "alice@example.com",
+		Email:      must(email.ParseAddress("alice@example.com")),
 		Purpose:    auth.TokenPurposeActivate,
 		CreatedAt:  time.Time{},
 		ConsumedAt: nil,
@@ -576,4 +567,11 @@ func assertFindEmailToken(t *testing.T, tx auth.Tx, want auth.EmailToken) {
 
 func ptr[T any](v T) *T {
 	return &v
+}
+
+func must[T any](v T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return v
 }

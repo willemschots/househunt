@@ -65,13 +65,12 @@ func Test_Token_ParseString(t *testing.T) {
 
 			if !errors.Is(err, auth.ErrInvalidToken) {
 				t.Fatalf("expected error %v, got %v ", auth.ErrInvalidToken, err)
-
 			}
 		})
 	}
 }
 
-func Test_Token_HashMatch(t *testing.T) {
+func Test_Token_HashAndMatch(t *testing.T) {
 	t.Run("ok, hash and match", func(t *testing.T) {
 		tok, err := auth.GenerateToken()
 		if err != nil {
@@ -89,17 +88,8 @@ func Test_Token_HashMatch(t *testing.T) {
 	})
 
 	t.Run("ok, match existing token", func(t *testing.T) {
-		raw := "0102030405060708091011121314151617181920212223242526272829303132"
-		tok, err := auth.ParseToken(raw)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		hashStr := "$argon2id$v=19$m=47104,t=1,p=1$rSfnv7764FDPkWSk1zCRfA$nFV41xxTo0rNWkAXtozwgyQWTzon/TF58j6+ZDhz1Xg"
-		hash, err := auth.ParseArgon2Hash(hashStr)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+		tok := must(auth.ParseToken("0102030405060708091011121314151617181920212223242526272829303132"))
+		hash := must(auth.ParseArgon2Hash("$argon2id$v=19$m=47104,t=1,p=1$rSfnv7764FDPkWSk1zCRfA$nFV41xxTo0rNWkAXtozwgyQWTzon/TF58j6+ZDhz1Xg"))
 
 		if !tok.Match(hash) {
 			t.Fatalf("expected token to match hash, got no match")
@@ -107,17 +97,8 @@ func Test_Token_HashMatch(t *testing.T) {
 	})
 
 	t.Run("ok, no match", func(t *testing.T) {
-		raw := "3202030405060708091011121314151617181920212223242526272829303132"
-		tok, err := auth.ParseToken(raw)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		hashStr := "$argon2id$v=19$m=47104,t=1,p=1$rSfnv7764FDPkWSk1zCRfA$nFV41xxTo0rNWkAXtozwgyQWTzon/TF58j6+ZDhz1Xg"
-		hash, err := auth.ParseArgon2Hash(hashStr)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+		tok := must(auth.ParseToken("3202030405060708091011121314151617181920212223242526272829303132"))
+		hash := must(auth.ParseArgon2Hash("$argon2id$v=19$m=47104,t=1,p=1$rSfnv7764FDPkWSk1zCRfA$nFV41xxTo0rNWkAXtozwgyQWTzon/TF58j6+ZDhz1Xg"))
 
 		if tok.Match(hash) {
 			t.Fatalf("did not expect token to match, but it did")
