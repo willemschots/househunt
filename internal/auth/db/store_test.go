@@ -11,6 +11,7 @@ import (
 	"github.com/willemschots/househunt/internal/auth"
 	"github.com/willemschots/househunt/internal/auth/db"
 	"github.com/willemschots/househunt/internal/db/testdb"
+	"github.com/willemschots/househunt/internal/email"
 	"github.com/willemschots/househunt/internal/errorz"
 )
 
@@ -154,6 +155,136 @@ func Test_Tx_FindUserByEmail(t *testing.T) {
 			t.Fatalf("expected errors to be %v got %v (via errors.Is)", errorz.ErrNotFound, err)
 		}
 	})
+}
+
+func Test_Tx_FindUser(t *testing.T) {
+	setupUsers := func(t *testing.T, tx auth.Tx) []auth.User {
+		users := []auth.User{
+			testUser(t, nil),
+			testUser(t, func(u *auth.User) {
+				u.Email = "jacob@example.com"
+				u.IsActive = true
+			}),
+			testUser(t, func(u *auth.User) {
+				u.Email = "eva@example.com"
+			}),
+		}
+
+		for i := range users {
+			err := tx.CreateUser(&users[i])
+			if err != nil {
+				t.Fatalf("failed to save user: %v", err)
+			}
+		}
+
+		return users
+	}
+
+	tests := map[string]struct {
+		filter   *auth.UserFilter
+		wantFunc func([]auth.User) []auth.User
+	}{
+		"ok, all users, empty slices": {
+			filter: &auth.UserFilter{
+				IDs:      []int{},
+				Emails:   []email.Address{},
+				IsActive: nil,
+			},
+			wantFunc: func(users []auth.User) []auth.User {
+				return users
+			},
+		},
+		"ok, active users": {
+			filter: &auth.UserFilter{
+				IsActive: ptr(true),
+			},
+			wantFunc: func(users []auth.User) []auth.User {
+				return users[1:2]
+			},
+		},
+		"ok, one by id": {
+			filter: &auth.UserFilter{
+				IDs: []int{2},
+			},
+			wantFunc: func(users []auth.User) []auth.User {
+				return []auth.User{users[1]}
+			},
+		},
+		"ok, several by id": {
+			filter: &auth.UserFilter{
+				IDs: []int{1, 3},
+			},
+			wantFunc: func(users []auth.User) []auth.User {
+				return []auth.User{
+					users[0], users[2],
+				}
+			},
+		},
+		"ok, one by email": {
+			filter: &auth.UserFilter{
+				Emails: []email.Address{
+					email.Address("jacob@example.com"),
+				},
+			},
+			wantFunc: func(users []auth.User) []auth.User {
+				return []auth.User{users[1]}
+			},
+		},
+		"ok, several by email": {
+			filter: &auth.UserFilter{
+				Emails: []email.Address{
+					email.Address("jacob@example.com"),
+					email.Address("eva@example.com"),
+				},
+			},
+			wantFunc: func(users []auth.User) []auth.User {
+				return []auth.User{
+					users[1], users[2],
+				}
+			},
+		},
+		"ok, combine filters": {
+			filter: &auth.UserFilter{
+				IDs:      []int{1, 3},
+				Emails:   []email.Address{email.Address("alice@example.com")},
+				IsActive: ptr(false),
+			},
+			wantFunc: func(users []auth.User) []auth.User {
+				return users[0:1]
+			},
+		},
+		"ok, no results": {
+			filter: &auth.UserFilter{
+				IDs: []int{4},
+			},
+			wantFunc: func(users []auth.User) []auth.User {
+				return []auth.User{}
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			store := storeForTest(t)
+
+			tx, err := store.BeginTx(context.Background())
+			if err != nil {
+				t.Fatalf("failed to begin tx: %v", err)
+			}
+
+			users := setupUsers(t, tx)
+			want := tc.wantFunc(users)
+
+			got, err := tx.FindUsers(tc.filter)
+			if err != nil {
+				t.Fatalf("failed to find users: %v", err)
+			}
+
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("got\n%#v\nwant\n%#v\n", got, want)
+			}
+		})
+	}
 }
 
 func Test_Tx_CreateEmailToken(t *testing.T) {
@@ -455,4 +586,8 @@ func assertFindEmailToken(t *testing.T, tx auth.Tx, want auth.EmailToken) {
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got\n%#v\nwant\n%#v\n", got, want)
 	}
+}
+
+func ptr[T any](v T) *T {
+	return &v
 }

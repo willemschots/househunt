@@ -6,6 +6,7 @@ import (
 	"reflect"
 
 	"github.com/willemschots/househunt/internal/auth"
+	"github.com/willemschots/househunt/internal/db"
 	"github.com/willemschots/househunt/internal/email"
 	"github.com/willemschots/househunt/internal/errorz"
 )
@@ -91,6 +92,69 @@ func (t *Tx) FindUserByEmail(addr email.Address) (auth.User, error) {
 	var u auth.User
 	err := row.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.IsActive, &u.CreatedAt, &u.UpdatedAt)
 	return u, errorz.MapDBErr(err)
+}
+
+func (t *Tx) FindUsers(f *auth.UserFilter) ([]auth.User, error) {
+	q, params := userFilterQuery(f)
+	fmt.Println(q)
+	rows, err := t.tx.Query(q, params...)
+	if err != nil {
+		return nil, errorz.MapDBErr(err)
+	}
+
+	defer rows.Close()
+
+	out := make([]auth.User, 0)
+	for rows.Next() {
+		var u auth.User
+		err := rows.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.IsActive, &u.CreatedAt, &u.UpdatedAt)
+		if err != nil {
+			return nil, errorz.MapDBErr(err)
+		}
+
+		out = append(out, u)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, errorz.MapDBErr(err)
+	}
+
+	return out, nil
+}
+
+func userFilterQuery(f *auth.UserFilter) (string, []any) {
+	var q db.Query
+
+	q.Query(`SELECT id, email, password_hash, is_active, created_at, updated_at FROM users WHERE 1=1 `)
+
+	if len(f.IDs) > 0 {
+		q.Query(`AND id IN (`)
+		q.Params(anySlice(f.IDs)...)
+		q.Query(`)`)
+	}
+
+	if len(f.Emails) > 0 {
+		q.Query(`AND email IN (`)
+		q.Params(anySlice(f.Emails)...)
+		q.Query(`)`)
+	}
+
+	if f.IsActive != nil {
+		q.Query("AND is_active = ")
+		q.Param(f.IsActive)
+	}
+
+	q.Query(` ORDER BY id ASC`)
+
+	return q.Get()
+}
+
+func anySlice[T any](s []T) []any {
+	out := make([]any, 0, len(s))
+	for _, v := range s {
+		out = append(out, v)
+	}
+	return out
 }
 
 // CreateEmailToken creates an email token in the database.

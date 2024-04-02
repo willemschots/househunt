@@ -14,27 +14,6 @@ var (
 	ErrDuplicateAccount = errors.New("duplicate account")
 )
 
-// Store provides access to the user store.
-type Store interface {
-	BeginTx(ctx context.Context) (Tx, error)
-}
-
-// Tx is a transaction. If an error occurs on any of the Create/Update/Find methods,
-// the transaction is considered to have failed and should be rolled back.
-// Tx is not safe for concurrent use.
-type Tx interface {
-	Commit() error
-	Rollback() error
-
-	CreateUser(u *User) error
-	UpdateUser(u *User) error
-	FindUserByEmail(v email.Address) (User, error)
-
-	CreateEmailToken(t *EmailToken) error
-	UpdateEmailToken(t *EmailToken) error
-	FindEmailTokenByID(id int) (EmailToken, error)
-}
-
 // ErrFunc is a function that handles errors.
 type ErrFunc func(error)
 
@@ -61,7 +40,7 @@ func NewService(s Store, emailSvc *email.Service, errHandler ErrFunc, workTimeou
 }
 
 func (s *Service) Close() {
-	s.wg.Wait()
+	s.wg.Wait() // wait for all open workers to finish.
 }
 
 // RegisterAccount registers a new account for the provided credentials.
@@ -159,11 +138,10 @@ func (s *Service) startActivation(ctx context.Context, user User) error {
 	}
 
 	// Send the email.
-	// This could fail independently of the transaction. For now, this is an acceptable
-	// risk. If the user has not received the email, they can always try to register again.
+	// This could fail independently of the transaction. This is an acceptable
+	// risk for now. If the user has not received the email, they can always try to register again.
 	//
-	// If at some point this becomes unacceptable, we need to consider some kind of outbox
-	// pattern.
+	// If at some point this becomes unacceptable, we need to consider some kind of outbox pattern.
 	err = s.emailSvc.Send(ctx, "account-activation", user.Email, struct {
 		ID    int
 		Token Token

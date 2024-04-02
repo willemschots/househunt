@@ -256,6 +256,12 @@ func (f *failingTx) FindUserByEmail(v email.Address) (auth.User, error) {
 	})
 }
 
+func (f *failingTx) FindUsers(filter *auth.UserFilter) ([]auth.User, error) {
+	return testerr.MaybeFail(f.store.dep, func() ([]auth.User, error) {
+		return f.tx.FindUsers(filter)
+	})
+}
+
 func (f *failingTx) CreateEmailToken(t *auth.EmailToken) error {
 	return testerr.MaybeFailErrFunc(f.store.dep, func() error {
 		return f.tx.CreateEmailToken(t)
