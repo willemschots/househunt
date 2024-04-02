@@ -7,7 +7,6 @@ import (
 
 	"github.com/willemschots/househunt/internal/auth"
 	"github.com/willemschots/househunt/internal/db"
-	"github.com/willemschots/househunt/internal/email"
 	"github.com/willemschots/househunt/internal/errorz"
 )
 
@@ -83,20 +82,10 @@ func (t *Tx) UpdateUser(user *auth.User) error {
 	return nil
 }
 
-// FindUserByEmail queries for an user by email address.
-// It returns errorz.ErrNotFound if no user is found.
-func (t *Tx) FindUserByEmail(addr email.Address) (auth.User, error) {
-	const q = `SELECT id, email, password_hash, is_active, created_at, updated_at FROM users WHERE email = ?`
-	row := t.tx.QueryRow(q, addr)
-
-	var u auth.User
-	err := row.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.IsActive, &u.CreatedAt, &u.UpdatedAt)
-	return u, errorz.MapDBErr(err)
-}
-
+// FindUsers queries for users based on the provided filter.
+// It returns an empty slice if no users are found.
 func (t *Tx) FindUsers(f *auth.UserFilter) ([]auth.User, error) {
 	q, params := userFilterQuery(f)
-	fmt.Println(q)
 	rows, err := t.tx.Query(q, params...)
 	if err != nil {
 		return nil, errorz.MapDBErr(err)

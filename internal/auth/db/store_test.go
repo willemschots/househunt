@@ -139,24 +139,6 @@ func Test_Tx_UpdateUser(t *testing.T) {
 	}))
 }
 
-func Test_Tx_FindUserByEmail(t *testing.T) {
-	// success cases already tested in Test_Tx_SaveUser.
-
-	t.Run("fail, not found", func(t *testing.T) {
-		store := storeForTest(t)
-
-		tx, err := store.BeginTx(context.Background())
-		if err != nil {
-			t.Fatalf("failed to begin tx: %v", err)
-		}
-
-		_, err = tx.FindUserByEmail("jacob@example.com")
-		if !errors.Is(err, errorz.ErrNotFound) {
-			t.Fatalf("expected errors to be %v got %v (via errors.Is)", errorz.ErrNotFound, err)
-		}
-	})
-}
-
 func Test_Tx_FindUser(t *testing.T) {
 	setupUsers := func(t *testing.T, tx auth.Tx) []auth.User {
 		users := []auth.User{
@@ -565,13 +547,17 @@ func testEmailToken(t *testing.T, modFunc func(*auth.EmailToken)) auth.EmailToke
 func assertFindUser(t *testing.T, tx auth.Tx, want auth.User) {
 	t.Helper()
 
-	got, err := tx.FindUserByEmail(want.Email)
+	got, err := tx.FindUsers(&auth.UserFilter{IDs: []int{want.ID}})
 	if err != nil {
 		t.Fatalf("failed to find user: %v", err)
 	}
 
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("got\n%#v\nwant\n%#v\n", got, want)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 user, got %d", len(got))
+	}
+
+	if !reflect.DeepEqual(got[0], want) {
+		t.Errorf("got\n%#v\nwant\n%#v\n", got[0], want)
 	}
 }
 

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/willemschots/househunt/internal/email"
-	"github.com/willemschots/househunt/internal/errorz"
 )
 
 var (
@@ -107,15 +106,16 @@ func (s *Service) startActivation(ctx context.Context, user User) error {
 	err = s.inTx(ctx, func(tx Tx) error {
 		// TODO: Limit nr of tokens per user.
 
-		_, txErr := tx.FindUserByEmail(user.Email)
-		if txErr == nil {
-			// TODO: Check if the user is active.
-			// Only return an error if the user is active.
-			return ErrDuplicateAccount
+		// TODO: Check for active user only.
+		users, txErr := tx.FindUsers(&UserFilter{
+			Emails: []email.Address{user.Email},
+		})
+		if txErr != nil {
+			return txErr
 		}
 
-		if !errors.Is(txErr, errorz.ErrNotFound) {
-			return txErr
+		if len(users) > 0 {
+			return ErrDuplicateAccount
 		}
 
 		txErr = tx.CreateUser(&user)
@@ -177,4 +177,8 @@ func (s *Service) inTx(ctx context.Context, f func(tx Tx) error) error {
 	}
 
 	return nil
+}
+
+func ptr[T any](v T) *T {
+	return &v
 }

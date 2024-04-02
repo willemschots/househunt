@@ -29,7 +29,6 @@ type Tx interface {
 
 	CreateUser(u *User) error
 	UpdateUser(u *User) error
-	FindUserByEmail(v email.Address) (User, error)
 	FindUsers(filter *UserFilter) ([]User, error)
 
 	CreateEmailToken(t *EmailToken) error
