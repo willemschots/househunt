@@ -6,7 +6,7 @@ import (
 	"reflect"
 
 	"github.com/willemschots/househunt/internal/auth"
-	"github.com/willemschots/househunt/internal/email"
+	"github.com/willemschots/househunt/internal/db"
 	"github.com/willemschots/househunt/internal/errorz"
 )
 
@@ -82,15 +82,60 @@ func (t *Tx) UpdateUser(user *auth.User) error {
 	return nil
 }
 
-// FindUserByEmail queries for an user by email address.
-// It returns errorz.ErrNotFound if no user is found.
-func (t *Tx) FindUserByEmail(addr email.Address) (auth.User, error) {
-	const q = `SELECT id, email, password_hash, is_active, created_at, updated_at FROM users WHERE email = ?`
-	row := t.tx.QueryRow(q, addr)
+// FindUsers queries for users based on the provided filter.
+// It returns an empty slice if no users are found.
+func (t *Tx) FindUsers(filter *auth.UserFilter) ([]auth.User, error) {
+	q, params := userFilterQuery(filter)
+	rows, err := t.tx.Query(q, params...)
+	if err != nil {
+		return nil, errorz.MapDBErr(err)
+	}
 
-	var u auth.User
-	err := row.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.IsActive, &u.CreatedAt, &u.UpdatedAt)
-	return u, errorz.MapDBErr(err)
+	defer rows.Close()
+
+	out := make([]auth.User, 0)
+	for rows.Next() {
+		var u auth.User
+		err := rows.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.IsActive, &u.CreatedAt, &u.UpdatedAt)
+		if err != nil {
+			return nil, errorz.MapDBErr(err)
+		}
+
+		out = append(out, u)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, errorz.MapDBErr(err)
+	}
+
+	return out, nil
+}
+
+func userFilterQuery(f *auth.UserFilter) (string, []any) {
+	var q db.Query
+
+	q.Query(`SELECT id, email, password_hash, is_active, created_at, updated_at FROM users WHERE 1=1 `)
+
+	if len(f.IDs) > 0 {
+		q.Query(`AND id IN (`)
+		q.Params(anySlice(f.IDs)...)
+		q.Query(`)`)
+	}
+
+	if len(f.Emails) > 0 {
+		q.Query(`AND email IN (`)
+		q.Params(anySlice(f.Emails)...)
+		q.Query(`)`)
+	}
+
+	if f.IsActive != nil {
+		q.Query("AND is_active = ")
+		q.Param(f.IsActive)
+	}
+
+	q.Query(` ORDER BY id ASC`)
+
+	return q.Get()
 }
 
 // CreateEmailToken creates an email token in the database.
@@ -103,7 +148,7 @@ func (t *Tx) CreateEmailToken(token *auth.EmailToken) error {
 	now := t.nowFunc()
 
 	const q = `INSERT INTO email_tokens (token_hash, user_id, email, purpose, created_at, consumed_at) VALUES (?, ?, ?, ?, ?, ?)`
-	result, err := t.tx.Exec(q, token.TokenHash.String(), token.UserID, token.Email, token.Purpose, now, nil)
+	result, err := t.tx.Exec(q, token.TokenHash.String(), token.UserID, token.Email, token.Purpose, now, token.ConsumedAt)
 	if err != nil {
 		return errorz.MapDBErr(err)
 	}
@@ -142,13 +187,72 @@ func (t *Tx) UpdateEmailToken(token *auth.EmailToken) error {
 	return nil
 }
 
-// FindEmailTokenByID queries for an email token by ID.
-// It returns errorz.ErrNotFound if no email token is found.
-func (t *Tx) FindEmailTokenByID(id int) (auth.EmailToken, error) {
-	const q = `SELECT id, token_hash, user_id, email, purpose, created_at, consumed_at FROM email_tokens WHERE id = ?`
-	row := t.tx.QueryRow(q, id)
+// FindEmailTokens queries for email tokens based on the provided filter.
+func (t *Tx) FindEmailTokens(filter *auth.EmailTokenFilter) ([]auth.EmailToken, error) {
+	q, params := emailTokenFilterQuery(filter)
+	rows, err := t.tx.Query(q, params...)
+	if err != nil {
+		return nil, errorz.MapDBErr(err)
+	}
 
-	var token auth.EmailToken
-	err := row.Scan(&token.ID, &token.TokenHash, &token.UserID, &token.Email, &token.Purpose, &token.CreatedAt, &token.ConsumedAt)
-	return token, errorz.MapDBErr(err)
+	defer rows.Close()
+
+	out := make([]auth.EmailToken, 0)
+	for rows.Next() {
+		var token auth.EmailToken
+		err := rows.Scan(&token.ID, &token.TokenHash, &token.UserID, &token.Email, &token.Purpose, &token.CreatedAt, &token.ConsumedAt)
+		if err != nil {
+			return nil, errorz.MapDBErr(err)
+		}
+
+		out = append(out, token)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, errorz.MapDBErr(err)
+	}
+
+	return out, nil
+}
+
+func emailTokenFilterQuery(f *auth.EmailTokenFilter) (string, []any) {
+	var q db.Query
+
+	q.Query(`SELECT id, token_hash, user_id, email, purpose, created_at, consumed_at FROM email_tokens WHERE 1=1 `)
+
+	if len(f.IDs) > 0 {
+		q.Query(`AND id IN (`)
+		q.Params(anySlice(f.IDs)...)
+		q.Query(`) `)
+	}
+
+	if len(f.UserIDs) > 0 {
+		q.Query(`AND user_id IN (`)
+		q.Params(anySlice(f.UserIDs)...)
+		q.Query(`) `)
+	}
+
+	if len(f.Purposes) > 0 {
+		q.Query(`AND purpose IN (`)
+		q.Params(anySlice(f.Purposes)...)
+		q.Query(`) `)
+	}
+
+	if f.IsConsumed != nil {
+		q.Query("AND consumed_at IS ")
+		if *f.IsConsumed {
+			q.Query("NOT ")
+		}
+		q.Query("NULL ")
+	}
+
+	return q.Get()
+}
+
+func anySlice[T any](s []T) []any {
+	out := make([]any, 0, len(s))
+	for _, v := range s {
+		out = append(out, v)
+	}
+	return out
 }

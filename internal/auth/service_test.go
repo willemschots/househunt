@@ -7,131 +7,334 @@ import (
 	"testing"
 	"time"
 
-	"github.com/willemschots/househunt/assets"
 	"github.com/willemschots/househunt/internal/auth"
 	"github.com/willemschots/househunt/internal/auth/db"
 	"github.com/willemschots/househunt/internal/db/testdb"
 	"github.com/willemschots/househunt/internal/email"
-	"github.com/willemschots/househunt/internal/email/view"
+	"github.com/willemschots/househunt/internal/errorz"
 	"github.com/willemschots/househunt/internal/errorz/testerr"
 )
 
 func Test_Service_RegisterAccount(t *testing.T) {
-	setup := func(t *testing.T) (*auth.Service, *email.MemorySender, *errList) {
-		store := db.New(testdb.RunWhile(t, true), func() time.Time {
-			return time.Now().Round(0)
-		})
-
-		errs := &errList{
-			mutex: &sync.Mutex{},
-			errs:  make([]error, 0),
-		}
-
-		emailSvc, sender := emailSvc()
-		svc := auth.NewService(store, emailSvc, errs.AppendErr, time.Second)
-
-		return svc, sender, errs
-	}
-
-	setupFailingStore := func(t *testing.T, dep *testerr.FailingDep) (*auth.Service, *email.MemorySender, *errList) {
-		store := &failingStore{
-			store: db.New(testdb.RunWhile(t, true), func() time.Time {
-				return time.Now().Round(0)
-			}),
-			dep: dep,
-		}
-
-		errs := &errList{
-			mutex: &sync.Mutex{},
-			errs:  make([]error, 0),
-		}
-
-		emailSvc, sender := emailSvc()
-		svc := auth.NewService(store, emailSvc, errs.AppendErr, time.Second)
-
-		return svc, sender, errs
-	}
-
 	t.Run("ok, register account", func(t *testing.T) {
-		svc, sender, errs := setup(t)
+		svc, deps := setupService(t, nil)
 
 		credentials := auth.Credentials{
-			Email:    emailAddress(t, "test@example.com"),
-			Password: password(t, "reallyStrongPassword1"),
+			Email:    must(email.ParseAddress("info@example.com")),
+			Password: must(auth.ParsePassword("reallyStrongPassword1")),
 		}
+
 		err := svc.RegisterAccount(context.Background(), credentials)
 		if err != nil {
 			t.Fatalf("failed to register account: %v", err)
 		}
 
-		// Wait for service goroutines to finish.
-		svc.Close()
+		// Wait for service goroutine to finish registering.
+		svc.Wait()
 
-		errs.assertNoError(t)
+		// Verify no errors were reported to the error handler.
+		deps.errList.assertNoError(t)
 
 		// Assert that an email was send to the email address.
-		if len(sender.Emails) != 1 || sender.Emails[0].Recipient != credentials.Email {
-			t.Fatalf("expected 1 email to %s, got %d", credentials.Email, len(sender.Emails))
+		if len(deps.emailer.emails) != 1 || deps.emailer.emails[0].recipient != credentials.Email {
+			t.Fatalf("expected 1 email to %s, got %d", credentials.Email, len(deps.emailer.emails))
 		}
 	})
 
-	// TODO: Add case "ok, re-register non-activated account"
-
-	// TODO: Replace test below with "fail, async re-register activated account"
-	t.Run("fail async, register account with same email", func(t *testing.T) {
-		svc, sender, errs := setup(t)
+	t.Run("ok, re-register non-activated account", func(t *testing.T) {
+		svc, deps := setupService(t, nil)
 
 		credentials := auth.Credentials{
-			Email:    emailAddress(t, "test@example.com"),
-			Password: password(t, "reallyStrongPassword1"),
+			Email:    must(email.ParseAddress("info@example.com")),
+			Password: must(auth.ParsePassword("reallyStrongPassword1")),
 		}
+
+		// Register once.
 		err := svc.RegisterAccount(context.Background(), credentials)
 		if err != nil {
 			t.Fatalf("failed to register account: %v", err)
 		}
 
-		// Register again, notice this outputs no error.
+		// Wait for service goroutine to finish.
+		svc.Wait()
+
+		// Register again.
 		err = svc.RegisterAccount(context.Background(), credentials)
 		if err != nil {
 			t.Fatalf("failed to register account: %v", err)
 		}
 
-		// Wait for service goroutines to finish.
-		svc.Close()
+		// Wait for service goroutine to finish registering.
+		svc.Wait()
 
-		// However, it does output an error to the err handler.
-		errs.assertErrorIs(t, auth.ErrDuplicateAccount)
+		// Verify no errors were reported to the error handler.
+		deps.errList.assertNoError(t)
 
-		// Assert only a single email was send.
-		if len(sender.Emails) != 1 {
-			t.Fatalf("expected 1 emails, got %d", len(sender.Emails))
+		// Assert two single email were send.
+		if len(deps.emailer.emails) != 2 {
+			t.Fatalf("expected 2 emails, got %d", len(deps.emailer.emails))
 		}
+	})
+
+	t.Run("fail async, re-register active account", func(t *testing.T) {
+		svc, deps := setupService(t, nil)
+
+		credentials := auth.Credentials{
+			Email:    must(email.ParseAddress("info@example.com")),
+			Password: must(auth.ParsePassword("reallyStrongPassword1")),
+		}
+
+		// Register once.
+		err := svc.RegisterAccount(context.Background(), credentials)
+		if err != nil {
+			t.Fatalf("failed to register account: %v", err)
+		}
+
+		// Wait for service goroutine to finish registering.
+		svc.Wait()
+
+		// Activate the account.
+		if len(deps.emailer.emails) != 1 {
+			t.Fatalf("expected 1 email, got %d", len(deps.emailer.emails))
+		}
+
+		request, ok := deps.emailer.emails[0].data.(auth.ActivationRequest)
+		if !ok {
+			t.Fatalf("unexpected data type: %T", deps.emailer.emails[0].data)
+		}
+
+		err = svc.ActivateAccount(context.Background(), request)
+		if err != nil {
+			t.Fatalf("failed to activate account: %v", err)
+		}
+
+		// Wait for service goroutine to finish activating.
+		svc.Wait()
+
+		// Register again.
+		err = svc.RegisterAccount(context.Background(), credentials)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		svc.Wait()
+
+		// Now we should have an error.
+		deps.errList.assertErrorIs(t, auth.ErrDuplicateAccount)
 	})
 
 	// TODO: add case "fail async, too many registration requests"
 
-	for _, dep := range testerr.NewFailingDeps(testerr.Err, 5) {
-		t.Run("fail, store fails", func(t *testing.T) {
-			svc, sender, errs := setupFailingStore(t, &dep)
+	for _, tracker := range testerr.NewFailingDeps(testerr.Err, 5) {
+		t.Run("fail async, store fails", func(t *testing.T) {
+			svc, deps := setupService(t, nil)
+			deps.store.tracker = &tracker
 
 			credentials := auth.Credentials{
-				Email:    emailAddress(t, "test@example.com"),
-				Password: password(t, "reallyStrongPassword1"),
+				Email:    must(email.ParseAddress("info@example.com")),
+				Password: must(auth.ParsePassword("reallyStrongPassword1")),
 			}
+
 			err := svc.RegisterAccount(context.Background(), credentials)
 			if err != nil {
 				t.Fatalf("failed to register account: %v", err)
 			}
 
-			// Wait for service goroutines to finish.
-			svc.Close()
+			// Wait for service goroutine to finish registering.
+			svc.Wait()
 
-			errs.assertErrorIs(t, testerr.Err)
+			deps.errList.assertErrorIs(t, testerr.Err)
 
 			// Assert no email was send.
-			if len(sender.Emails) != 0 {
-				t.Fatalf("expected 0 emails, got %d", len(sender.Emails))
+			if len(deps.emailer.emails) != 0 {
+				t.Fatalf("expected 0 emails, got %d", len(deps.emailer.emails))
 			}
+		})
+	}
+
+	t.Run("fail sync, emailer fails", func(t *testing.T) {
+		svc, deps := setupService(t, nil)
+		deps.emailer.testErr = testerr.Err
+
+		credentials := auth.Credentials{
+			Email:    must(email.ParseAddress("info@example.com")),
+			Password: must(auth.ParsePassword("reallyStrongPassword1")),
+		}
+
+		err := svc.RegisterAccount(context.Background(), credentials)
+		if err != nil {
+			t.Fatalf("failed to register account: %v", err)
+		}
+
+		// Wait for service goroutine to finish registering.
+		svc.Wait()
+
+		deps.errList.assertErrorIs(t, testerr.Err)
+	})
+}
+
+func Test_Service_ActivateAccount(t *testing.T) {
+	registerAndGetRequest := func(t *testing.T, svc *auth.Service, deps *svcDeps) auth.ActivationRequest {
+		err := svc.RegisterAccount(context.Background(), auth.Credentials{
+			Email:    must(email.ParseAddress("info@example.com")),
+			Password: must(auth.ParsePassword("reallyStrongPassword1")),
+		})
+		if err != nil {
+			t.Fatalf("failed to register account: %v", err)
+		}
+
+		// wait for the service goroutine to finish registering.
+		svc.Wait()
+
+		// Get the last email
+		index := len(deps.emailer.emails) - 1
+		request, ok := deps.emailer.emails[index].data.(auth.ActivationRequest)
+		if !ok {
+			t.Fatalf("unexpected data type: %T", deps.emailer.emails[index].data)
+		}
+
+		return request
+	}
+
+	// setup the test by registering an account and getting the activation request.
+	setup := func(t *testing.T) (*auth.Service, *svcDeps, auth.ActivationRequest) {
+		svc, deps := setupService(t, nil)
+
+		request := registerAndGetRequest(t, svc, deps)
+
+		return svc, deps, request
+	}
+
+	t.Run("ok, activate non-activated account", func(t *testing.T) {
+		svc, deps, req := setup(t)
+
+		err := svc.ActivateAccount(context.Background(), req)
+		if err != nil {
+			t.Fatalf("failed to activate account: %v", err)
+		}
+
+		// wait for the service goroutine to finish activating.
+		svc.Wait()
+
+		deps.errList.assertNoError(t)
+	})
+
+	t.Run("fail, non-matching token", func(t *testing.T) {
+		svc, deps, req := setup(t)
+
+		req.Token = must(auth.ParseToken("0102030405060708091011121314151617181920212223242526272829303132"))
+
+		err := svc.ActivateAccount(context.Background(), req)
+		if !errors.Is(err, errorz.ErrNotFound) {
+			t.Fatalf("expected error %v, got %v", errorz.ErrNotFound, err)
+		}
+
+		// wait for the service goroutine to finish activating.
+		svc.Wait()
+
+		deps.errList.assertNoError(t)
+	})
+
+	t.Run("fail, non-existent token", func(t *testing.T) {
+		svc, deps, req := setup(t)
+
+		req.ID = 2
+
+		err := svc.ActivateAccount(context.Background(), req)
+		if !errors.Is(err, errorz.ErrNotFound) {
+			t.Fatalf("expected error %v, got %v", errorz.ErrNotFound, err)
+		}
+
+		// wait for the service goroutine to finish activating.
+		svc.Wait()
+
+		deps.errList.assertNoError(t)
+	})
+
+	t.Run("fail, token already consumed", func(t *testing.T) {
+		svc, deps, req := setup(t)
+
+		err := svc.ActivateAccount(context.Background(), req)
+		if err != nil {
+			t.Fatalf("failed to activate account: %v", err)
+		}
+		// wait for the service goroutine to finish activating.
+		svc.Wait()
+
+		err = svc.ActivateAccount(context.Background(), req)
+		if !errors.Is(err, errorz.ErrNotFound) {
+			t.Fatalf("expected error %v, got %v", errorz.ErrNotFound, err)
+		}
+
+		// wait for the service goroutine to finish activating.
+		svc.Wait()
+
+		deps.errList.assertNoError(t)
+	})
+
+	t.Run("fail, other token used to activate account", func(t *testing.T) {
+		svc, deps, req1 := setup(t)
+
+		req2 := registerAndGetRequest(t, svc, deps)
+
+		err := svc.ActivateAccount(context.Background(), req2)
+		if err != nil {
+			t.Fatalf("failed to activate account: %v", err)
+		}
+
+		// wait for the service goroutine to finish activating.
+		svc.Wait()
+
+		// now try with the first token.
+		err = svc.ActivateAccount(context.Background(), req1)
+		if !errors.Is(err, errorz.ErrNotFound) {
+			t.Fatalf("expected error %v, got %v", errorz.ErrNotFound, err)
+		}
+
+		// wait for the service goroutine to finish activating.
+		svc.Wait()
+
+		deps.errList.assertNoError(t)
+	})
+
+	t.Run("fail, expired token", func(t *testing.T) {
+		svc, deps, req := setup(t)
+
+		// TokenExpiry is set to 1 hour.
+		// Simulate the current time being an hour ahead.
+		svc.NowFunc = func() time.Time {
+			return time.Now().Add(time.Hour + time.Second)
+		}
+
+		err := svc.ActivateAccount(context.Background(), req)
+		if !errors.Is(err, errorz.ErrNotFound) {
+			t.Fatalf("expected error %v, got %v", errorz.ErrNotFound, err)
+		}
+
+		// wait for the service goroutine to finish activating.
+		svc.Wait()
+
+		deps.errList.assertNoError(t)
+	})
+
+	//t.Run("fail, token for different purpose", func(t *testing.T) {
+	//	// TODO: Implement this test.
+	//})
+
+	for _, tracker := range testerr.NewFailingDeps(testerr.Err, 6) {
+		t.Run("fail, store fails", func(t *testing.T) {
+			svc, deps, req := setup(t)
+			deps.store.tracker = &tracker
+
+			err := svc.ActivateAccount(context.Background(), req)
+			if !errors.Is(err, testerr.Err) {
+				t.Fatalf("expected error %v, got %v (via errors.Is)", testerr.Err, err)
+			}
+
+			// wait for the service goroutine to finish activating.
+			svc.Wait()
+
+			deps.errList.assertNoError(t)
 		})
 	}
 }
@@ -173,103 +376,132 @@ func (e *errList) assertErrorIs(t *testing.T, err error) {
 	}
 }
 
-func emailAddress(t *testing.T, raw string) email.Address {
-	t.Helper()
+type svcDeps struct {
+	store   *testStore
+	emailer *testEmailer
+	errList *errList
+	nowFunc func() time.Time
+}
 
-	e, err := email.ParseAddress(raw)
-	if err != nil {
-		t.Fatalf("failed to parse email: %v", err)
+func setupService(t *testing.T, cfgFunc func(*auth.ServiceConfig)) (*auth.Service, *svcDeps) {
+	deps := &svcDeps{
+		store: &testStore{
+			store: db.New(testdb.RunWhile(t, true), func() time.Time {
+				return time.Now().Round(0)
+			}),
+			tracker: &testerr.Calltracker{}, // empty call trackers never fail.
+		},
+		errList: &errList{
+			mutex: &sync.Mutex{},
+			errs:  make([]error, 0),
+		},
+		emailer: &testEmailer{},
+		nowFunc: func() time.Time {
+			return time.Now().Round(0)
+		},
 	}
 
-	return e
-}
-
-func password(t *testing.T, raw string) auth.Password {
-	t.Helper()
-
-	p, err := auth.ParsePassword(raw)
-	if err != nil {
-		t.Fatalf("failed to parse password: %v", err)
+	cfg := auth.ServiceConfig{
+		WorkerTimeout: time.Second,
+		TokenExpiry:   time.Hour,
 	}
 
-	return p
+	if cfgFunc != nil {
+		cfgFunc(&cfg)
+	}
+
+	svc := auth.NewService(deps.store, deps.emailer, deps.errList.AppendErr, cfg)
+
+	return svc, deps
 }
 
-func emailSvc() (*email.Service, *email.MemorySender) {
-	sender := &email.MemorySender{}
-	renderer := view.NewFSRenderer(assets.EmailFS)
-	emailSvc := email.NewService(email.Address("sender@example.com"), renderer, sender)
-	return emailSvc, sender
+// testStore wraps a real store but uses a testerr.Calltracker to
+// possibly fail on certain method calls.
+type testStore struct {
+	store   auth.Store
+	tracker *testerr.Calltracker
 }
 
-// failingStore wraps a real store but fails on specific calls.
-//
-// The failure is controlled by a FailingDep. They either fail
-// on the xth call, or on the xth call and all calls after that.
-type failingStore struct {
-	store auth.Store
-	dep   *testerr.FailingDep
-}
-
-func (f *failingStore) BeginTx(ctx context.Context) (auth.Tx, error) {
-	return testerr.MaybeFail(f.dep, func() (auth.Tx, error) {
+func (f *testStore) BeginTx(ctx context.Context) (auth.Tx, error) {
+	return testerr.MaybeFail(f.tracker, func() (auth.Tx, error) {
 		realTx, err := f.store.BeginTx(ctx)
-		return &failingTx{
+		return &testTx{
 			store: f,
 			tx:    realTx,
 		}, err
 	})
 }
 
-type failingTx struct {
-	store *failingStore
+type testTx struct {
+	store *testStore
 	tx    auth.Tx
 }
 
-func (f *failingTx) Commit() error {
-	return testerr.MaybeFailErrFunc(f.store.dep, func() error {
-		return f.tx.Commit()
+func (tx *testTx) Commit() error {
+	return testerr.MaybeFailErrFunc(tx.store.tracker, func() error {
+		return tx.tx.Commit()
 	})
 }
 
-func (f *failingTx) Rollback() error {
-	return testerr.MaybeFailErrFunc(f.store.dep, func() error {
-		return f.tx.Rollback()
+func (tx *testTx) Rollback() error {
+	return testerr.MaybeFailErrFunc(tx.store.tracker, func() error {
+		return tx.tx.Rollback()
 	})
 }
 
-func (f *failingTx) CreateUser(u *auth.User) error {
-	return testerr.MaybeFailErrFunc(f.store.dep, func() error {
-		return f.tx.CreateUser(u)
+func (tx *testTx) CreateUser(u *auth.User) error {
+	return testerr.MaybeFailErrFunc(tx.store.tracker, func() error {
+		return tx.tx.CreateUser(u)
 	})
 }
 
-func (f *failingTx) UpdateUser(u *auth.User) error {
-	return testerr.MaybeFailErrFunc(f.store.dep, func() error {
-		return f.tx.UpdateUser(u)
+func (tx *testTx) UpdateUser(u *auth.User) error {
+	return testerr.MaybeFailErrFunc(tx.store.tracker, func() error {
+		return tx.tx.UpdateUser(u)
 	})
 }
 
-func (f *failingTx) FindUserByEmail(v email.Address) (auth.User, error) {
-	return testerr.MaybeFail(f.store.dep, func() (auth.User, error) {
-		return f.tx.FindUserByEmail(v)
+func (tx *testTx) FindUsers(filter *auth.UserFilter) ([]auth.User, error) {
+	return testerr.MaybeFail(tx.store.tracker, func() ([]auth.User, error) {
+		return tx.tx.FindUsers(filter)
 	})
 }
 
-func (f *failingTx) CreateEmailToken(t *auth.EmailToken) error {
-	return testerr.MaybeFailErrFunc(f.store.dep, func() error {
-		return f.tx.CreateEmailToken(t)
+func (tx *testTx) CreateEmailToken(t *auth.EmailToken) error {
+	return testerr.MaybeFailErrFunc(tx.store.tracker, func() error {
+		return tx.tx.CreateEmailToken(t)
 	})
 }
 
-func (f *failingTx) UpdateEmailToken(t *auth.EmailToken) error {
-	return testerr.MaybeFailErrFunc(f.store.dep, func() error {
-		return f.tx.UpdateEmailToken(t)
+func (tx *testTx) UpdateEmailToken(t *auth.EmailToken) error {
+	return testerr.MaybeFailErrFunc(tx.store.tracker, func() error {
+		return tx.tx.UpdateEmailToken(t)
 	})
 }
 
-func (f *failingTx) FindEmailTokenByID(id int) (auth.EmailToken, error) {
-	return testerr.MaybeFail(f.store.dep, func() (auth.EmailToken, error) {
-		return f.tx.FindEmailTokenByID(id)
+func (tx *testTx) FindEmailTokens(filter *auth.EmailTokenFilter) ([]auth.EmailToken, error) {
+	return testerr.MaybeFail(tx.store.tracker, func() ([]auth.EmailToken, error) {
+		return tx.tx.FindEmailTokens(filter)
 	})
+}
+
+type sendEmail struct {
+	template  string
+	recipient email.Address
+	data      interface{}
+}
+
+type testEmailer struct {
+	emails  []sendEmail
+	testErr error
+}
+
+func (e *testEmailer) Send(_ context.Context, template string, to email.Address, data interface{}) error {
+	e.emails = append(e.emails, sendEmail{
+		template:  template,
+		recipient: to,
+		data:      data,
+	})
+
+	return e.testErr
 }

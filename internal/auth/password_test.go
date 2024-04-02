@@ -38,21 +38,14 @@ func Test_Password_ParseHashMatch(t *testing.T) {
 	}
 
 	t.Run("ok, password does not match hash", func(t *testing.T) {
-		pwd, err := auth.ParsePassword("reallyStrongPassword1")
-		if err != nil {
-			t.Fatalf("failed to parse password: %v", err)
-		}
+		pwd := must(auth.ParsePassword("reallyStrongPassword1"))
 
 		hash, err := pwd.Hash()
 		if err != nil {
 			t.Fatalf("failed to hash password: %v", err)
 		}
 
-		other, err := auth.ParsePassword("reallyStrongPassword2")
-		if err != nil {
-			t.Fatalf("failed to parse password: %v", err)
-		}
-
+		other := must(auth.ParsePassword("reallyStrongPassword2"))
 		if other.Match(hash) {
 			t.Errorf("password\n%s\nshould not match hash\n%+v", other, hash)
 		}
@@ -67,7 +60,7 @@ func Test_Password_ParseHashMatch(t *testing.T) {
 			Iterations:  1,
 			Parallelism: 1,
 			Salt:        []byte("somesalt"),
-			Hash:        mustHexDecodeString(t, "655ad15eac652dc59f7170a7332bf49b8469be1fdb9c28bb"),
+			Hash:        must(hex.DecodeString("655ad15eac652dc59f7170a7332bf49b8469be1fdb9c28bb")),
 		}
 
 		pwd, err := auth.ParsePassword("password")
@@ -98,10 +91,7 @@ func Test_Password_ParseHashMatch(t *testing.T) {
 
 func Test_Password_PreventExposure(t *testing.T) {
 	raw := "12345678"
-	pwd, err := auth.ParsePassword(raw)
-	if err != nil {
-		t.Fatalf("failed to parse password: %v", err)
-	}
+	pwd := must(auth.ParsePassword(raw))
 
 	assert := func(t *testing.T, s string) {
 		t.Helper()
@@ -142,15 +132,4 @@ func Test_Password_PreventExposure(t *testing.T) {
 			t.Errorf("log output\n%s\ncontains raw password: %s", s, raw)
 		}
 	})
-}
-
-func mustHexDecodeString(t *testing.T, str string) []byte {
-	t.Helper()
-
-	b, err := hex.DecodeString(str)
-	if err != nil {
-		t.Fatalf("failed to decode hex string: %v", err)
-	}
-
-	return b
 }

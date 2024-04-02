@@ -14,58 +14,57 @@ var (
 	ErrDuplicateAccount = errors.New("duplicate account")
 )
 
-// Store provides access to the user store.
-type Store interface {
-	BeginTx(ctx context.Context) (Tx, error)
-}
-
-// Tx is a transaction. If an error occurs on any of the Create/Update/Find methods,
-// the transaction is considered to have failed and should be rolled back.
-// Tx is not safe for concurrent use.
-type Tx interface {
-	Commit() error
-	Rollback() error
-
-	CreateUser(u *User) error
-	UpdateUser(u *User) error
-	FindUserByEmail(v email.Address) (User, error)
-
-	CreateEmailToken(t *EmailToken) error
-	UpdateEmailToken(t *EmailToken) error
-	FindEmailTokenByID(id int) (EmailToken, error)
+// Emailer is used to send templated emails.
+type Emailer interface {
+	Send(ctx context.Context, template string, to email.Address, data interface{}) error
 }
 
 // ErrFunc is a function that handles errors.
 type ErrFunc func(error)
 
+// ServiceConfig is the configuration for the Service.
+type ServiceConfig struct {
+	// WorkerTimeout is the max duration worker goroutines are allowed
+	// to take befor they are cancelled.
+	WorkerTimeout time.Duration
+	// TokenExpirty is the duration a token is valid.
+	TokenExpiry time.Duration
+}
+
 // Service is the type that provides the main rules for
 // authentication.
 type Service struct {
-	store       Store
-	emailSvc    *email.Service
-	wg          *sync.WaitGroup
-	errHandler  ErrFunc
-	workTimeout time.Duration // amount of time the "worker" goroutines are allowed to run.
+	store      Store
+	emailer    Emailer
+	wg         *sync.WaitGroup
+	errHandler ErrFunc
+	cfg        ServiceConfig
+
+	// NowFunc is used to get the current time.
+	// Exposed for testing purposes.
+	NowFunc func() time.Time
 }
 
-func NewService(s Store, emailSvc *email.Service, errHandler ErrFunc, workTimeout time.Duration) *Service {
+func NewService(s Store, emailer Emailer, errHandler ErrFunc, cfg ServiceConfig) *Service {
 	svc := &Service{
-		store:       s,
-		emailSvc:    emailSvc,
-		wg:          &sync.WaitGroup{},
-		errHandler:  errHandler,
-		workTimeout: workTimeout,
+		store:      s,
+		emailer:    emailer,
+		wg:         &sync.WaitGroup{},
+		errHandler: errHandler,
+		cfg:        cfg,
+		NowFunc:    time.Now,
 	}
 
 	return svc
 }
 
-func (s *Service) Close() {
+// Wait waits for all open workers to finish.
+func (s *Service) Wait() {
 	s.wg.Wait()
 }
 
 // RegisterAccount registers a new account for the provided credentials.
-func (s *Service) RegisterAccount(ctx context.Context, c Credentials) error {
+func (s *Service) RegisterAccount(_ context.Context, c Credentials) error {
 	// Hash the password.
 	pwdHash, err := c.Password.Hash()
 	if err != nil {
@@ -86,7 +85,7 @@ func (s *Service) RegisterAccount(ctx context.Context, c Credentials) error {
 	go func() {
 		defer s.wg.Done()
 
-		wCtx, cancel := context.WithTimeout(ctx, s.workTimeout)
+		wCtx, cancel := context.WithTimeout(context.Background(), s.cfg.WorkerTimeout)
 		defer cancel()
 
 		err := s.startActivation(wCtx, user)
@@ -128,24 +127,32 @@ func (s *Service) startActivation(ctx context.Context, user User) error {
 	err = s.inTx(ctx, func(tx Tx) error {
 		// TODO: Limit nr of tokens per user.
 
-		_, txErr := tx.FindUserByEmail(user.Email)
-		if txErr == nil {
-			// TODO: Check if the user is active.
-			// Only return an error if the user is active.
-			return ErrDuplicateAccount
-		}
-
-		if !errors.Is(txErr, errorz.ErrNotFound) {
-			return txErr
-		}
-
-		txErr = tx.CreateUser(&user)
+		// Find user user with the same email.
+		users, txErr := tx.FindUsers(&UserFilter{
+			Emails: []email.Address{user.Email},
+		})
 		if txErr != nil {
 			return txErr
 		}
 
-		emailToken.UserID = user.ID
+		// Check if we already have an inactive user with the same email,
+		// otherwise create a new user.
+		if len(users) > 0 {
+			if users[0].IsActive {
+				return ErrDuplicateAccount
+			}
 
+			emailToken.UserID = users[0].ID
+		} else {
+			txErr = tx.CreateUser(&user)
+			if txErr != nil {
+				return txErr
+			}
+
+			emailToken.UserID = user.ID
+		}
+
+		// Create the activation token.
 		txErr = tx.CreateEmailToken(&emailToken)
 		if txErr != nil {
 			return txErr
@@ -159,15 +166,11 @@ func (s *Service) startActivation(ctx context.Context, user User) error {
 	}
 
 	// Send the email.
-	// This could fail independently of the transaction. For now, this is an acceptable
-	// risk. If the user has not received the email, they can always try to register again.
+	// This could fail independently of the transaction. This is an acceptable
+	// risk for now. If the user has not received the email, they can always try to register again.
 	//
-	// If at some point this becomes unacceptable, we need to consider some kind of outbox
-	// pattern.
-	err = s.emailSvc.Send(ctx, "account-activation", user.Email, struct {
-		ID    int
-		Token Token
-	}{
+	// If at some point this becomes unacceptable, we need to consider some kind of outbox pattern.
+	err = s.emailer.Send(ctx, "account-activation", user.Email, ActivationRequest{
 		ID:    emailToken.ID,
 		Token: token,
 	})
@@ -176,6 +179,87 @@ func (s *Service) startActivation(ctx context.Context, user User) error {
 	}
 
 	return nil
+}
+
+// ActivationRequest is a request to activate an account.
+type ActivationRequest struct {
+	ID    int
+	Token Token
+}
+
+// ActivateAccount attempts to activate the requested account.
+func (s *Service) ActivateAccount(ctx context.Context, req ActivationRequest) error {
+	// finish the activation:
+	// - Find the token.
+	// - Check if the token is still valid.
+	// - Activate the user.
+	// - Consume all unconsumed activation tokens for the user.
+	return s.inTx(ctx, func(tx Tx) error {
+		// Find an unconsumed activation token with the provided ID.
+		tokens, err := tx.FindEmailTokens(&EmailTokenFilter{
+			IDs:        []int{req.ID},
+			Purposes:   []TokenPurpose{TokenPurposeActivate},
+			IsConsumed: ptr(false),
+		})
+		if err != nil {
+			return err
+		}
+
+		if len(tokens) != 1 {
+			return errorz.ErrNotFound
+		}
+
+		token := tokens[0]
+		now := s.NowFunc()
+
+		if now.Sub(token.CreatedAt) > s.cfg.TokenExpiry {
+			return errorz.ErrNotFound
+		}
+
+		// Check if the provided token matches the stored hash.
+		if !req.Token.Match(token.TokenHash) {
+			return errorz.ErrNotFound
+		}
+
+		// Activate the corresponding user account.
+		users, err := tx.FindUsers(&UserFilter{
+			IDs:      []int{token.UserID},
+			IsActive: ptr(false),
+		})
+		if err != nil {
+			return err
+		}
+
+		if len(users) != 1 {
+			return errorz.ErrNotFound
+		}
+
+		users[0].IsActive = true
+
+		err = tx.UpdateUser(&users[0])
+		if err != nil {
+			return err
+		}
+
+		// Consume all unconsumed activation tokens for the user.
+		tokens, err = tx.FindEmailTokens(&EmailTokenFilter{
+			UserIDs:  []int{token.UserID},
+			Purposes: []TokenPurpose{TokenPurposeActivate},
+		})
+		if err != nil {
+			return err
+		}
+
+		for _, t := range tokens {
+			t.ConsumedAt = ptr(now)
+			err = tx.UpdateEmailToken(&t)
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
 }
 
 func (s *Service) inTx(ctx context.Context, f func(tx Tx) error) error {
@@ -199,4 +283,8 @@ func (s *Service) inTx(ctx context.Context, f func(tx Tx) error) error {
 	}
 
 	return nil
+}
+
+func ptr[T any](v T) *T {
+	return &v
 }
