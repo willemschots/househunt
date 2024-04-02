@@ -415,7 +415,7 @@ func Test_Tx_UpdateEmailToken(t *testing.T) {
 	}))
 }
 
-func Test_Tx_FindEmailTokenByHash(t *testing.T) {
+func Test_Tx_FindEmailTokenByID(t *testing.T) {
 	// success cases already tested in Test_Tx_CreateEmailToken.
 
 	t.Run("fail, not found", func(t *testing.T) {

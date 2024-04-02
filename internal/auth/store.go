@@ -6,7 +6,7 @@ import (
 	"github.com/willemschots/househunt/internal/email"
 )
 
-// UserFilter represents a filter to find users.
+// UserFilter is used filter users.
 // Returned users must match all the provided fields.
 // If a field is empty or nil, it's ignored.
 type UserFilter struct {
