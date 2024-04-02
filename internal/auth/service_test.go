@@ -262,8 +262,8 @@ func Test_Service_ActivateAccount(t *testing.T) {
 		svc.Wait()
 
 		err = svc.ActivateAccount(context.Background(), req)
-		if !errors.Is(err, auth.ErrTokenExpired) {
-			t.Fatalf("expected error %v, got %v", auth.ErrTokenExpired, err)
+		if !errors.Is(err, errorz.ErrNotFound) {
+			t.Fatalf("expected error %v, got %v", errorz.ErrNotFound, err)
 		}
 
 		// wait for the service goroutine to finish activating.
@@ -307,8 +307,8 @@ func Test_Service_ActivateAccount(t *testing.T) {
 		}
 
 		err := svc.ActivateAccount(context.Background(), req)
-		if !errors.Is(err, auth.ErrTokenExpired) {
-			t.Fatalf("expected error %v, got %v", auth.ErrTokenExpired, err)
+		if !errors.Is(err, errorz.ErrNotFound) {
+			t.Fatalf("expected error %v, got %v", errorz.ErrNotFound, err)
 		}
 
 		// wait for the service goroutine to finish activating.
@@ -479,9 +479,9 @@ func (tx *testTx) UpdateEmailToken(t *auth.EmailToken) error {
 	})
 }
 
-func (tx *testTx) FindEmailTokenByID(id int) (auth.EmailToken, error) {
-	return testerr.MaybeFail(tx.store.tracker, func() (auth.EmailToken, error) {
-		return tx.tx.FindEmailTokenByID(id)
+func (tx *testTx) FindEmailTokens(filter *auth.EmailTokenFilter) ([]auth.EmailToken, error) {
+	return testerr.MaybeFail(tx.store.tracker, func() ([]auth.EmailToken, error) {
+		return tx.tx.FindEmailTokens(filter)
 	})
 }
 

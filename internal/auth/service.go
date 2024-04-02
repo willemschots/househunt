@@ -12,7 +12,6 @@ import (
 
 var (
 	ErrDuplicateAccount = errors.New("duplicate account")
-	ErrTokenExpired     = errors.New("token expired")
 )
 
 // Emailer is used to send templated emails.
@@ -190,35 +189,36 @@ type ActivationRequest struct {
 
 // ActivateAccount attempts to activate the requested account.
 func (s *Service) ActivateAccount(ctx context.Context, req ActivationRequest) error {
+	// finish the activation:
+	// - Find the token.
+	// - Check if the token is still valid.
+	// - Activate the user.
+	// - Consume all unconsumed activation tokens for the user.
 	return s.inTx(ctx, func(tx Tx) error {
-		// Find the token for this id.
-		token, err := tx.FindEmailTokenByID(req.ID)
+		// Find an unconsumed activation token with the provided ID.
+		tokens, err := tx.FindEmailTokens(&EmailTokenFilter{
+			IDs:        []int{req.ID},
+			Purposes:   []TokenPurpose{TokenPurposeActivate},
+			IsConsumed: ptr(false),
+		})
 		if err != nil {
 			return err
 		}
 
-		if token.Purpose != TokenPurposeActivate {
+		if len(tokens) != 1 {
 			return errorz.ErrNotFound
 		}
 
+		token := tokens[0]
 		now := s.NowFunc()
 
-		duration := now.Sub(token.CreatedAt)
-		if token.ConsumedAt != nil || duration > s.cfg.TokenExpiry {
-			return ErrTokenExpired
+		if now.Sub(token.CreatedAt) > s.cfg.TokenExpiry {
+			return errorz.ErrNotFound
 		}
 
 		// Check if the provided token matches the stored hash.
 		if !req.Token.Match(token.TokenHash) {
 			return errorz.ErrNotFound
-		}
-
-		// Consume the token.
-		token.ConsumedAt = &now
-
-		err = tx.UpdateEmailToken(&token)
-		if err != nil {
-			return err
 		}
 
 		// Activate the corresponding user account.
@@ -239,6 +239,23 @@ func (s *Service) ActivateAccount(ctx context.Context, req ActivationRequest) er
 		err = tx.UpdateUser(&users[0])
 		if err != nil {
 			return err
+		}
+
+		// Consume all unconsumed activation tokens for the user.
+		tokens, err = tx.FindEmailTokens(&EmailTokenFilter{
+			UserIDs:  []int{token.UserID},
+			Purposes: []TokenPurpose{TokenPurposeActivate},
+		})
+		if err != nil {
+			return err
+		}
+
+		for _, t := range tokens {
+			t.ConsumedAt = ptr(now)
+			err = tx.UpdateEmailToken(&t)
+			if err != nil {
+				return err
+			}
 		}
 
 		return nil

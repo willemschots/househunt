@@ -416,22 +416,166 @@ func Test_Tx_UpdateEmailToken(t *testing.T) {
 	}))
 }
 
-func Test_Tx_FindEmailTokenByID(t *testing.T) {
-	// success cases already tested in Test_Tx_CreateEmailToken.
-
-	t.Run("fail, not found", func(t *testing.T) {
-		store := storeForTest(t)
-
-		tx, err := store.BeginTx(context.Background())
-		if err != nil {
-			t.Fatalf("failed to begin tx: %v", err)
+func Test_Tx_FinderEmailTokens(t *testing.T) {
+	setupEmailTokens := func(t *testing.T, tx auth.Tx) []auth.EmailToken {
+		users := []auth.User{
+			newUser(t, nil),
+			newUser(t, func(u *auth.User) {
+				u.Email = must(email.ParseAddress("jacob@example.com"))
+			}),
 		}
 
-		_, err = tx.FindEmailTokenByID(2)
-		if !errors.Is(err, errorz.ErrNotFound) {
-			t.Fatalf("expected errors to be %v got %v (via errors.Is)", errorz.ErrNotFound, err)
+		for i := range users {
+			err := tx.CreateUser(&users[i])
+			if err != nil {
+				t.Fatalf("failed to save user: %v", err)
+			}
 		}
-	})
+
+		tokens := []auth.EmailToken{
+			newEmailToken(t, nil),
+			newEmailToken(t, nil),
+			newEmailToken(t, func(tok *auth.EmailToken) {
+				tok.UserID = users[1].ID
+				tok.Purpose = "other" // TODO: use a different constant once we have one.
+				now := now(t, 9)
+				tok.ConsumedAt = &now
+			}),
+		}
+
+		for i := range tokens {
+			err := tx.CreateEmailToken(&tokens[i])
+			if err != nil {
+				t.Fatalf("failed to save email token: %v", err)
+			}
+		}
+
+		return tokens
+	}
+
+	tests := map[string]struct {
+		filter   *auth.EmailTokenFilter
+		wantFunc func([]auth.EmailToken) []auth.EmailToken
+	}{
+		"ok, all email tokens, empty slices": {
+			filter: &auth.EmailTokenFilter{
+				IDs:        []int{},
+				UserIDs:    []int{},
+				Purposes:   []auth.TokenPurpose{},
+				IsConsumed: nil,
+			},
+			wantFunc: func(tokens []auth.EmailToken) []auth.EmailToken {
+				return tokens
+			},
+		},
+		"ok, unconsumed": {
+			filter: &auth.EmailTokenFilter{
+				IsConsumed: ptr(false),
+			},
+			wantFunc: func(tokens []auth.EmailToken) []auth.EmailToken {
+				return tokens[0:2]
+			},
+		},
+		"ok, consumed": {
+			filter: &auth.EmailTokenFilter{
+				IsConsumed: ptr(true),
+			},
+			wantFunc: func(tokens []auth.EmailToken) []auth.EmailToken {
+				return tokens[2:3]
+			},
+		},
+		"ok, one by id": {
+			filter: &auth.EmailTokenFilter{
+				IDs: []int{2},
+			},
+			wantFunc: func(tokens []auth.EmailToken) []auth.EmailToken {
+				return []auth.EmailToken{tokens[1]}
+			},
+		},
+		"ok, several by id": {
+			filter: &auth.EmailTokenFilter{
+				IDs: []int{1, 3},
+			},
+			wantFunc: func(tokens []auth.EmailToken) []auth.EmailToken {
+				return []auth.EmailToken{
+					tokens[0], tokens[2],
+				}
+			},
+		},
+		"ok, one by user id": {
+			filter: &auth.EmailTokenFilter{
+				UserIDs: []int{2},
+			},
+			wantFunc: func(tokens []auth.EmailToken) []auth.EmailToken {
+				return tokens[2:3]
+			},
+		},
+		"ok, several by user id": {
+			filter: &auth.EmailTokenFilter{
+				UserIDs: []int{1},
+			},
+			wantFunc: func(tokens []auth.EmailToken) []auth.EmailToken {
+				return tokens[0:2]
+			},
+		},
+		"ok, one by purpose": {
+			filter: &auth.EmailTokenFilter{
+				Purposes: []auth.TokenPurpose{"other"},
+			},
+			wantFunc: func(tokens []auth.EmailToken) []auth.EmailToken {
+				return tokens[2:3]
+			},
+		},
+		"ok, several by purpose": {
+			filter: &auth.EmailTokenFilter{
+				Purposes: []auth.TokenPurpose{auth.TokenPurposeActivate},
+			},
+			wantFunc: func(tokens []auth.EmailToken) []auth.EmailToken {
+				return tokens[0:2]
+			},
+		},
+		"ok, combine filters": {
+			filter: &auth.EmailTokenFilter{
+				IDs:      []int{2, 3},
+				UserIDs:  []int{1},
+				Purposes: []auth.TokenPurpose{auth.TokenPurposeActivate},
+			},
+			wantFunc: func(tokens []auth.EmailToken) []auth.EmailToken {
+				return tokens[1:2]
+			},
+		},
+		"ok, no results": {
+			filter: &auth.EmailTokenFilter{
+				IDs: []int{4},
+			},
+			wantFunc: func(tokens []auth.EmailToken) []auth.EmailToken {
+				return []auth.EmailToken{}
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			store := storeForTest(t)
+
+			tx, err := store.BeginTx(context.Background())
+			if err != nil {
+				t.Fatalf("failed to begin tx: %v", err)
+			}
+
+			tokens := setupEmailTokens(t, tx)
+			want := tc.wantFunc(tokens)
+
+			got, err := tx.FindEmailTokens(tc.filter)
+			if err != nil {
+				t.Fatalf("failed to find email tokens: %v", err)
+			}
+
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("got\n%#v\nwant\n%#v\n", got, want)
+			}
+		})
+	}
 }
 
 func inTx(f func(*testing.T, auth.Tx)) func(*testing.T) {
@@ -555,13 +699,17 @@ func assertFindUser(t *testing.T, tx auth.Tx, want auth.User) {
 func assertFindEmailToken(t *testing.T, tx auth.Tx, want auth.EmailToken) {
 	t.Helper()
 
-	got, err := tx.FindEmailTokenByID(want.ID)
+	got, err := tx.FindEmailTokens(&auth.EmailTokenFilter{IDs: []int{want.ID}})
 	if err != nil {
 		t.Fatalf("failed to find email token: %v", err)
 	}
 
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("got\n%#v\nwant\n%#v\n", got, want)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 email token, got %d", len(got))
+	}
+
+	if !reflect.DeepEqual(got[0], want) {
+		t.Errorf("got\n%#v\nwant\n%#v\n", got[0], want)
 	}
 }
 

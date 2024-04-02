@@ -15,6 +15,16 @@ type UserFilter struct {
 	IsActive *bool
 }
 
+// EmailTokenFilter is used to filter email tokens.
+// Returned tokens must match all the provided fields.
+// If a field is empty or nil, it's ignored.
+type EmailTokenFilter struct {
+	IDs        []int
+	UserIDs    []int
+	Purposes   []TokenPurpose
+	IsConsumed *bool
+}
+
 // Store provides access to the user store.
 type Store interface {
 	BeginTx(ctx context.Context) (Tx, error)
@@ -33,5 +43,5 @@ type Tx interface {
 
 	CreateEmailToken(t *EmailToken) error
 	UpdateEmailToken(t *EmailToken) error
-	FindEmailTokenByID(id int) (EmailToken, error)
+	FindEmailTokens(filter *EmailTokenFilter) ([]EmailToken, error)
 }
