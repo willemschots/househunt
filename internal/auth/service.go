@@ -38,8 +38,9 @@ func NewService(s Store, emailSvc *email.Service, errHandler ErrFunc, workTimeou
 	return svc
 }
 
-func (s *Service) Close() {
-	s.wg.Wait() // wait for all open workers to finish.
+// Wait waits for all open workers to finish.
+func (s *Service) Wait() {
+	s.wg.Wait()
 }
 
 // RegisterAccount registers a new account for the provided credentials.
@@ -106,7 +107,7 @@ func (s *Service) startActivation(ctx context.Context, user User) error {
 	err = s.inTx(ctx, func(tx Tx) error {
 		// TODO: Limit nr of tokens per user.
 
-		// TODO: Check for active user only.
+		// Find user user with the same email.
 		users, txErr := tx.FindUsers(&UserFilter{
 			Emails: []email.Address{user.Email},
 		})
@@ -114,17 +115,25 @@ func (s *Service) startActivation(ctx context.Context, user User) error {
 			return txErr
 		}
 
+		// Check if we already have an inactive user with the same email,
+		// otherwise create a new user.
 		if len(users) > 0 {
-			return ErrDuplicateAccount
+			// TODO: Fail if active user already exists.
+			//if users[0].IsActive {
+			//	return ErrDuplicateAccount
+			//}
+
+			emailToken.UserID = users[0].ID
+		} else {
+			txErr = tx.CreateUser(&user)
+			if txErr != nil {
+				return txErr
+			}
+
+			emailToken.UserID = user.ID
 		}
 
-		txErr = tx.CreateUser(&user)
-		if txErr != nil {
-			return txErr
-		}
-
-		emailToken.UserID = user.ID
-
+		// Create the activation token.
 		txErr = tx.CreateEmailToken(&emailToken)
 		if txErr != nil {
 			return txErr

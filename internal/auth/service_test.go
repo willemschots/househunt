@@ -28,7 +28,7 @@ func Test_Service_RegisterAccount(t *testing.T) {
 		}
 
 		emailSvc, sender := emailSvc()
-		svc := auth.NewService(store, emailSvc, errs.AppendErr, time.Second)
+		svc := auth.NewService(store, emailSvc, errs.AppendErr, 100*time.Second)
 
 		return svc, sender, errs
 	}
@@ -64,9 +64,10 @@ func Test_Service_RegisterAccount(t *testing.T) {
 			t.Fatalf("failed to register account: %v", err)
 		}
 
-		// Wait for service goroutines to finish.
-		svc.Close()
+		// Wait for service goroutine to finish.
+		svc.Wait()
 
+		// Verify no errors were reported to the error handler.
 		errs.assertNoError(t)
 
 		// Assert that an email was send to the email address.
@@ -75,40 +76,43 @@ func Test_Service_RegisterAccount(t *testing.T) {
 		}
 	})
 
-	// TODO: Add case "ok, re-register non-activated account"
-
-	// TODO: Replace test below with "fail, async re-register activated account"
-	t.Run("fail async, register account with same email", func(t *testing.T) {
+	t.Run("ok, re-register non-activated account", func(t *testing.T) {
 		svc, sender, errs := setup(t)
 
 		credentials := auth.Credentials{
 			Email:    emailAddress(t, "test@example.com"),
 			Password: password(t, "reallyStrongPassword1"),
 		}
+
+		// Register once.
 		err := svc.RegisterAccount(context.Background(), credentials)
 		if err != nil {
 			t.Fatalf("failed to register account: %v", err)
 		}
 
-		// Register again, notice this outputs no error.
+		// Wait for service goroutine to finish.
+		svc.Wait()
+
+		// Register again.
 		err = svc.RegisterAccount(context.Background(), credentials)
 		if err != nil {
 			t.Fatalf("failed to register account: %v", err)
 		}
 
-		// Wait for service goroutines to finish.
-		svc.Close()
+		// Wait for service goroutine to finish.
+		svc.Wait()
 
-		// However, it does output an error to the err handler.
-		errs.assertErrorIs(t, auth.ErrDuplicateAccount)
+		// Verify no errors were reported to the error handler.
+		errs.assertNoError(t)
 
-		// Assert only a single email was send.
-		if len(sender.Emails) != 1 {
-			t.Fatalf("expected 1 emails, got %d", len(sender.Emails))
+		// Assert two single email were send.
+		if len(sender.Emails) != 2 {
+			t.Fatalf("expected 2 emails, got %d", len(sender.Emails))
 		}
 	})
 
-	// TODO: add case "fail async, too many registration requests"
+	// TODO: Add test "fail, async re-register activated account"
+	// TODO: add case "fail, async, too many registration requests"
 
 	for _, dep := range testerr.NewFailingDeps(testerr.Err, 5) {
 		t.Run("fail, store fails", func(t *testing.T) {
@@ -123,8 +127,8 @@ func Test_Service_RegisterAccount(t *testing.T) {
 				t.Fatalf("failed to register account: %v", err)
 			}
 
-			// Wait for service goroutines to finish.
-			svc.Close()
+			// Wait for service goroutine to finish.
+			svc.Wait()
 
 			errs.assertErrorIs(t, testerr.Err)
 
