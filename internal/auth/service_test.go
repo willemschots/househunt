@@ -387,9 +387,7 @@ type svcDeps struct {
 func setupService(t *testing.T, cfgFunc func(*auth.ServiceConfig)) (*auth.Service, *svcDeps) {
 	deps := &svcDeps{
 		store: &testStore{
-			store: db.New(testdb.RunWhile(t, true), func() time.Time {
-				return time.Now().Round(0)
-			}),
+			store:   db.New(testdb.RunWhile(t, true)),
 			tracker: &testerr.Calltracker{}, // empty call trackers never fail.
 		},
 		errList: &errList{

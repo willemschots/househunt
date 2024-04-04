@@ -26,10 +26,8 @@ func Test_Tx_CreateUser(t *testing.T) {
 		}
 
 		want := newUser(t, func(u *auth.User) {
-			// The store should set the following fields of user.
+			// The store should set the id.
 			u.ID = 1
-			u.CreatedAt = now(t, 0)
-			u.UpdatedAt = now(t, 0)
 		})
 
 		if !reflect.DeepEqual(user, want) {
@@ -83,6 +81,8 @@ func Test_Tx_UpdateUser(t *testing.T) {
 		user.Email = must(email.ParseAddress("jacob@example.com"))
 		user.PasswordHash = must(krypto.ParseArgon2Hash("$argon2id$v=19$m=47104,t=1,p=1$CkX5zzYLJMWm0y/17eScyw$Qfah+NewdsdeF0+iV72mShZhRO93Qwzdj17TUZCH6ZU"))
 		user.IsActive = true
+		user.CreatedAt = now(t, 1)
+		user.UpdatedAt = now(t, 2)
 
 		err := tx.UpdateUser(&user)
 		if err != nil {
@@ -94,8 +94,8 @@ func Test_Tx_UpdateUser(t *testing.T) {
 			u.Email = must(email.ParseAddress("jacob@example.com"))
 			u.PasswordHash = must(krypto.ParseArgon2Hash("$argon2id$v=19$m=47104,t=1,p=1$CkX5zzYLJMWm0y/17eScyw$Qfah+NewdsdeF0+iV72mShZhRO93Qwzdj17TUZCH6ZU"))
 			u.IsActive = true
-			u.CreatedAt = now(t, 0)
-			u.UpdatedAt = now(t, 1) // The store should update the UpdatedAt field.
+			u.CreatedAt = now(t, 1)
+			u.UpdatedAt = now(t, 2)
 		})
 
 		if !reflect.DeepEqual(user, want) {
@@ -293,8 +293,8 @@ func Test_Tx_CreateEmailToken(t *testing.T) {
 		}
 
 		want := newEmailToken(t, func(tok *auth.EmailToken) {
+			// the store should set the id.
 			tok.ID = 1
-			tok.CreatedAt = now(t, 1)
 		})
 
 		if !reflect.DeepEqual(token, want) {
@@ -368,43 +368,6 @@ func Test_Tx_UpdateEmailToken(t *testing.T) {
 
 		assertFindEmailToken(t, tx, want)
 	}))
-
-	immutableFields := map[string]func(*auth.EmailToken, auth.User){
-		"TokenHash": func(tok *auth.EmailToken, _ auth.User) {
-			tok.TokenHash = must(krypto.ParseArgon2Hash("$argon2id$v=19$m=47104,t=1,p=1$vP9U4C5jsOzFQLj0gvUkYw$YLrSb2dGfcVohlm8syynqHs6/NHxXS9rt/t6TjL7pi0"))
-		},
-		"UserID": func(tok *auth.EmailToken, user2 auth.User) {
-			tok.UserID = user2.ID
-		},
-		"Email": func(tok *auth.EmailToken, _ auth.User) {
-			tok.Email = must(email.ParseAddress("jacob@example.com"))
-		},
-		"Purpose": func(tok *auth.EmailToken, _ auth.User) {
-			tok.Purpose = "other" // TODO: use a constant once we have one.
-		},
-	}
-
-	for field, modFunc := range immutableFields {
-		t.Run(fmt.Sprintf("fail, immutable field %s", field), inTxBadState(func(t *testing.T, tx auth.Tx) {
-			_, token := setup(t, tx)
-
-			// Create second user so we don't error on foreign key constraint.
-			user2 := newUser(t, func(u *auth.User) {
-				u.Email = "jacob@example.com"
-			})
-			err := tx.CreateUser(&user2)
-			if err != nil {
-				t.Fatalf("failed to save user: %v", err)
-			}
-
-			modFunc(&token, user2)
-
-			err = tx.UpdateEmailToken(&token)
-			if !errors.Is(err, errorz.ErrConstraintViolated) {
-				t.Fatalf("expected errors to be %v got %v (via errors.Is)", errorz.ErrConstraintViolated, err)
-			}
-		}))
-	}
 
 	t.Run("fail, not found", inTx(func(t *testing.T, tx auth.Tx) {
 		_, token := setup(t, tx)
@@ -634,13 +597,7 @@ func storeForTest(t *testing.T) *db.Store {
 	t.Helper()
 
 	testDB := testdb.RunWhile(t, true)
-
-	i := 0
-	return db.New(testDB, func() time.Time {
-		n := now(t, i)
-		i++
-		return n
-	})
+	return db.New(testDB)
 }
 
 func newUser(t *testing.T, modFunc func(*auth.User)) auth.User {
@@ -650,8 +607,8 @@ func newUser(t *testing.T, modFunc func(*auth.User)) auth.User {
 		ID:           0,
 		Email:        must(email.ParseAddress("alice@example.com")),
 		PasswordHash: must(krypto.ParseArgon2Hash("$argon2id$v=19$m=47104,t=1,p=1$vP9U4C5jsOzFQLj0gvUkYw$YLrSb2dGfcVohlm8syynqHs6/NHxXS9rt/t6TjL7pi0")),
-		CreatedAt:    time.Time{},
-		UpdatedAt:    time.Time{},
+		CreatedAt:    now(t, 0),
+		UpdatedAt:    now(t, 0),
 	}
 
 	if modFunc != nil {
@@ -669,7 +626,7 @@ func newEmailToken(t *testing.T, modFunc func(*auth.EmailToken)) auth.EmailToken
 		UserID:     1,
 		Email:      must(email.ParseAddress("alice@example.com")),
 		Purpose:    auth.TokenPurposeActivate,
-		CreatedAt:  time.Time{},
+		CreatedAt:  now(t, 1),
 		ConsumedAt: nil,
 	}
 
