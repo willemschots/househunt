@@ -10,15 +10,10 @@ import (
 )
 
 type Tx struct {
-	tx       *sql.Tx
-	nowFunc  NowFunc
-	badState bool
+	tx *sql.Tx
 }
 
 func (t *Tx) Commit() error {
-	if t.badState {
-		return errorz.ErrTxBadState
-	}
 	return t.tx.Commit()
 }
 

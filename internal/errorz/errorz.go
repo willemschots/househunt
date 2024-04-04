@@ -10,7 +10,6 @@ import (
 var (
 	ErrNotFound           = errors.New("not found")
 	ErrConstraintViolated = errors.New("constraint violated")
-	ErrTxBadState         = errors.New("transaction is in a known bad state")
 )
 
 // MapDBErr maps database errors to appropriate errorz errors.

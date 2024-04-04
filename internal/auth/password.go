@@ -7,8 +7,6 @@ import (
 )
 
 const (
-	keyLen = 32
-
 	minPasswordBytes = 8
 	// We put a generous upper cap on password length, so people can use
 	// passphrases but we don't allow MBs of data as a password.

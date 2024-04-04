@@ -560,24 +560,6 @@ func inTx(f func(*testing.T, auth.Tx)) func(*testing.T) {
 	}
 }
 
-func inTxBadState(f func(*testing.T, auth.Tx)) func(t *testing.T) {
-	return func(t *testing.T) {
-		store := storeForTest(t)
-
-		tx, err := store.BeginTx(context.Background())
-		if err != nil {
-			t.Fatalf("failed to begin tx: %v", err)
-		}
-
-		f(t, tx)
-
-		err = tx.Commit()
-		if !errors.Is(err, errorz.ErrTxBadState) {
-			t.Fatalf("expected errors to be %v got %v (via errors.Is)", errorz.ErrTxBadState, err)
-		}
-	}
-}
-
 func now(t *testing.T, i int) time.Time {
 	t.Helper()
 
