@@ -8,6 +8,7 @@ import (
 
 	"github.com/willemschots/househunt/internal/email"
 	"github.com/willemschots/househunt/internal/errorz"
+	"github.com/willemschots/househunt/internal/krypto"
 )
 
 var (
@@ -71,12 +72,6 @@ func (s *Service) RegisterAccount(_ context.Context, c Credentials) error {
 		return err
 	}
 
-	user := User{
-		Email:        c.Email,
-		PasswordHash: pwdHash,
-		IsActive:     false,
-	}
-
 	// The actual work is done in a separate goroutine to prevent:
 	// - Waiting for the email to be send might slow down sending a response.
 	// - Information leakage. Timing difference between existing/non-existing
@@ -88,7 +83,7 @@ func (s *Service) RegisterAccount(_ context.Context, c Credentials) error {
 		wCtx, cancel := context.WithTimeout(context.Background(), s.cfg.WorkerTimeout)
 		defer cancel()
 
-		err := s.startActivation(wCtx, user)
+		err := s.startActivation(wCtx, c.Email, pwdHash)
 		if err != nil {
 			s.errHandler(err)
 		}
@@ -105,13 +100,23 @@ func (s *Service) RegisterAccount(_ context.Context, c Credentials) error {
 // - Send an email to address with an activation link.
 //
 // If an active user with the same email address exists, ErrDuplicateAccount is returned.
-func (s *Service) startActivation(ctx context.Context, user User) error {
-	token, err := GenerateToken()
+func (s *Service) startActivation(ctx context.Context, addr email.Address, pwdHash krypto.Argon2Hash) error {
+	now := s.NowFunc()
+
+	user := User{
+		Email:        addr,
+		PasswordHash: pwdHash,
+		IsActive:     false,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+
+	token, err := krypto.GenerateToken()
 	if err != nil {
 		return err
 	}
 
-	tokenHash, err := token.Hash()
+	tokenHash, err := krypto.HashArgon2(token[:])
 	if err != nil {
 		return err
 	}
@@ -121,6 +126,7 @@ func (s *Service) startActivation(ctx context.Context, user User) error {
 		UserID:     0, // set after inserting the user.
 		Email:      user.Email,
 		Purpose:    TokenPurposeActivate,
+		CreatedAt:  now,
 		ConsumedAt: nil,
 	}
 
@@ -184,7 +190,7 @@ func (s *Service) startActivation(ctx context.Context, user User) error {
 // ActivationRequest is a request to activate an account.
 type ActivationRequest struct {
 	ID    int
-	Token Token
+	Token krypto.Token
 }
 
 // ActivateAccount attempts to activate the requested account.
@@ -217,7 +223,7 @@ func (s *Service) ActivateAccount(ctx context.Context, req ActivationRequest) er
 		}
 
 		// Check if the provided token matches the stored hash.
-		if !req.Token.Match(token.TokenHash) {
+		if !token.TokenHash.MatchBytes(req.Token[:]) {
 			return errorz.ErrNotFound
 		}
 
@@ -235,6 +241,7 @@ func (s *Service) ActivateAccount(ctx context.Context, req ActivationRequest) er
 		}
 
 		users[0].IsActive = true
+		users[0].UpdatedAt = now
 
 		err = tx.UpdateUser(&users[0])
 		if err != nil {

@@ -3,7 +3,6 @@ package db
 import (
 	"database/sql"
 	"fmt"
-	"reflect"
 
 	"github.com/willemschots/househunt/internal/auth"
 	"github.com/willemschots/househunt/internal/db"
@@ -11,15 +10,10 @@ import (
 )
 
 type Tx struct {
-	tx       *sql.Tx
-	nowFunc  NowFunc
-	badState bool
+	tx *sql.Tx
 }
 
 func (t *Tx) Commit() error {
-	if t.badState {
-		return errorz.ErrTxBadState
-	}
 	return t.tx.Commit()
 }
 
@@ -34,10 +28,8 @@ func (t *Tx) CreateUser(u *auth.User) error {
 		return fmt.Errorf("user already has an ID: %w", errorz.ErrConstraintViolated)
 	}
 
-	now := t.nowFunc()
-
 	const q = `INSERT INTO users (email, password_hash, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`
-	result, err := t.tx.Exec(q, u.Email, u.PasswordHash.String(), u.IsActive, now, now)
+	result, err := t.tx.Exec(q, u.Email, u.PasswordHash.String(), u.IsActive, u.CreatedAt, u.UpdatedAt)
 	if err != nil {
 		return errorz.MapDBErr(err)
 	}
@@ -49,8 +41,6 @@ func (t *Tx) CreateUser(u *auth.User) error {
 
 	// Only set the fields after the query was executed.
 	u.ID = int(id)
-	u.CreatedAt = now
-	u.UpdatedAt = now
 
 	return nil
 }
@@ -58,11 +48,9 @@ func (t *Tx) CreateUser(u *auth.User) error {
 // UpdateUser updates a user in the database.
 // It updates the users UpdatedAt field when successful.
 // It returns errorz.ErrNotFound if no user is found.
-func (t *Tx) UpdateUser(user *auth.User) error {
-	now := t.nowFunc()
-
-	const q = `UPDATE users SET email = ?, password_hash = ?, is_active = ?, updated_at = ? WHERE id = ?`
-	result, err := t.tx.Exec(q, user.Email, user.PasswordHash.String(), user.IsActive, now, user.ID)
+func (t *Tx) UpdateUser(u *auth.User) error {
+	const q = `UPDATE users SET email = ?, password_hash = ?, is_active = ?, created_at = ?, updated_at = ? WHERE id = ?`
+	result, err := t.tx.Exec(q, u.Email, u.PasswordHash.String(), u.IsActive, u.CreatedAt, u.UpdatedAt, u.ID)
 	if err != nil {
 		return errorz.MapDBErr(err)
 	}
@@ -73,11 +61,8 @@ func (t *Tx) UpdateUser(user *auth.User) error {
 	}
 
 	if n != 1 {
-		return fmt.Errorf("failed to update user %d: %w", user.ID, errorz.ErrNotFound)
+		return fmt.Errorf("failed to update user %d: %w", u.ID, errorz.ErrNotFound)
 	}
-
-	// Only set the fields after the query was executed.
-	user.UpdatedAt = now
 
 	return nil
 }
@@ -140,15 +125,13 @@ func userFilterQuery(f *auth.UserFilter) (string, []any) {
 
 // CreateEmailToken creates an email token in the database.
 // It updates the token ID and CreatedAt when successful.
-func (t *Tx) CreateEmailToken(token *auth.EmailToken) error {
-	if token.ID != 0 {
+func (t *Tx) CreateEmailToken(tok *auth.EmailToken) error {
+	if tok.ID != 0 {
 		return fmt.Errorf("email token already has an ID: %w", errorz.ErrConstraintViolated)
 	}
 
-	now := t.nowFunc()
-
 	const q = `INSERT INTO email_tokens (token_hash, user_id, email, purpose, created_at, consumed_at) VALUES (?, ?, ?, ?, ?, ?)`
-	result, err := t.tx.Exec(q, token.TokenHash.String(), token.UserID, token.Email, token.Purpose, now, token.ConsumedAt)
+	result, err := t.tx.Exec(q, tok.TokenHash.String(), tok.UserID, tok.Email, tok.Purpose, tok.CreatedAt, tok.ConsumedAt)
 	if err != nil {
 		return errorz.MapDBErr(err)
 	}
@@ -158,8 +141,7 @@ func (t *Tx) CreateEmailToken(token *auth.EmailToken) error {
 		return err
 	}
 
-	token.ID = int(id)
-	token.CreatedAt = now
+	tok.ID = int(id)
 
 	return nil
 }
@@ -168,20 +150,20 @@ func (t *Tx) CreateEmailToken(token *auth.EmailToken) error {
 // It returns errorz.ErrNotFound if no email token is found.
 // It only allows updating the ConsumedAt field, attempting to
 // update any other field will return errorz.ErrConstraintViolated.
-func (t *Tx) UpdateEmailToken(token *auth.EmailToken) error {
-	const q = `UPDATE email_tokens SET consumed_at = ? WHERE id = ? RETURNING token_hash, user_id, email, purpose`
-	row := t.tx.QueryRow(q, token.ConsumedAt, token.ID)
-
-	var out auth.EmailToken
-	err := row.Scan(&out.TokenHash, &out.UserID, &out.Email, &out.Purpose)
+func (t *Tx) UpdateEmailToken(tok *auth.EmailToken) error {
+	const q = `UPDATE email_tokens SET token_hash = ?, user_id = ?, email = ?, purpose = ?, created_at = ?, consumed_at = ? WHERE id = ?`
+	result, err := t.tx.Exec(q, tok.TokenHash.String(), tok.UserID, tok.Email, tok.Purpose, tok.CreatedAt, tok.ConsumedAt, tok.ID)
 	if err != nil {
 		return errorz.MapDBErr(err)
 	}
 
-	if !reflect.DeepEqual(out.TokenHash, token.TokenHash) || out.UserID != token.UserID || out.Email != token.Email || out.Purpose != token.Purpose {
-		// We have already updated, the transaction is in a bad state.
-		t.badState = true
-		return fmt.Errorf("trying to update immutable field: %w", errorz.ErrConstraintViolated)
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if n != 1 {
+		return fmt.Errorf("failed to update email token %d: %w", tok.ID, errorz.ErrNotFound)
 	}
 
 	return nil

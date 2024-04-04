@@ -1,17 +1,22 @@
-package auth
+package krypto
 
 import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"strings"
 
 	"golang.org/x/crypto/argon2"
 )
 
-// ErrInvalidArgon2Hash is returned when an invalid argon2 hash is parsed.
-var ErrInvalidArgon2Hash = fmt.Errorf("invalid argon2 hash")
+const saltLen = 16
+
+var (
+	// ErrInvalidInput indicates invalid input was provided.
+	ErrInvalidInput = errors.New("invalid input")
+)
 
 const (
 	variant = "argon2id"
@@ -33,18 +38,44 @@ type Argon2Hash struct {
 	Hash        []byte
 }
 
+// HashArgon2 hashes a byte slice using the argon2id algorithm.
+func HashArgon2(b []byte) (Argon2Hash, error) {
+	if len(b) == 0 {
+		return Argon2Hash{}, fmt.Errorf("empty byte slice: %w", ErrInvalidInput)
+	}
+
+	// First we generate a salt.
+	salt, err := genRandomBytes(saltLen)
+	if err != nil {
+		return Argon2Hash{}, fmt.Errorf("failed to generate salt: %w", err)
+	}
+
+	// Then we hash the bytes.
+	hash := argon2.IDKey(b, salt, iterations, memoryKiB, parallelism, keyLen)
+
+	return Argon2Hash{
+		Variant:     variant,
+		Version:     argon2.Version,
+		MemoryKiB:   memoryKiB,
+		Iterations:  iterations,
+		Parallelism: parallelism,
+		Salt:        salt,
+		Hash:        hash,
+	}, nil
+}
+
 // ParseArgon2Hash parses an argon2 hash from the string representation provided by the String method.
 func ParseArgon2Hash(txt string) (Argon2Hash, error) {
 	// Split the string into its components.
 	vals := strings.Split(txt, "$")
 	if len(vals) != 6 {
-		return Argon2Hash{}, fmt.Errorf("wrong number of components: %w", ErrInvalidArgon2Hash)
+		return Argon2Hash{}, fmt.Errorf("wrong number of components: %w", ErrInvalidInput)
 	}
 
 	h := Argon2Hash{}
 	for i, v := range vals {
 		if !parseComponent(i, v, &h) {
-			return Argon2Hash{}, fmt.Errorf("failed to parse component %d: %w", i, ErrInvalidArgon2Hash)
+			return Argon2Hash{}, fmt.Errorf("failed to parse component %d: %w", i, ErrInvalidInput)
 		}
 	}
 
@@ -78,6 +109,12 @@ func parseComponent(i int, v string, h *Argon2Hash) bool {
 	}
 
 	return false
+}
+
+// MatchBytes checks if the hash matches the given byte slice.
+func (h Argon2Hash) MatchBytes(b []byte) bool {
+	hash := argon2.IDKey(b, h.Salt, h.Iterations, h.MemoryKiB, h.Parallelism, uint32(len(h.Hash)))
+	return subtle.ConstantTimeCompare(hash, h.Hash) == 1
 }
 
 // String returns the string representation of the hash.
@@ -118,35 +155,6 @@ func (h *Argon2Hash) Scan(v any) error {
 	*h = parsed
 
 	return nil
-}
-
-func hashBytes(b []byte) (Argon2Hash, error) {
-	// First we generate a salt.
-	salt, err := genRandomBytes(saltLen)
-	if err != nil {
-		return Argon2Hash{}, fmt.Errorf("failed to generate salt: %w", err)
-	}
-
-	// Then we hash the password.
-	hash := argon2.IDKey(b, salt, iterations, memoryKiB, parallelism, keyLen)
-
-	return Argon2Hash{
-		Variant:     variant,
-		Version:     argon2.Version,
-		MemoryKiB:   memoryKiB,
-		Iterations:  iterations,
-		Parallelism: parallelism,
-		Salt:        salt,
-		Hash:        hash,
-	}, nil
-}
-
-func matchHash(h Argon2Hash, b []byte) bool {
-	// Hash the plaintext password with the same parameters as the provided hash.
-	other := argon2.IDKey(b, h.Salt, h.Iterations, h.MemoryKiB, h.Parallelism, uint32(len(h.Hash)))
-
-	// compare the two hashes in constant time to avoid timing attacks.
-	return subtle.ConstantTimeCompare(other, h.Hash) == 1
 }
 
 func genRandomBytes(n int) ([]byte, error) {

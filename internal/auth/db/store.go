@@ -13,15 +13,13 @@ type NowFunc func() time.Time
 
 // Store is responsible for interacting with a database.
 type Store struct {
-	db      *sql.DB
-	nowFunc NowFunc
+	db *sql.DB
 }
 
 // New creates a new Store.
-func New(db *sql.DB, nowFunc NowFunc) *Store {
+func New(db *sql.DB) *Store {
 	return &Store{
-		db:      db,
-		nowFunc: nowFunc,
+		db: db,
 	}
 }
 
@@ -32,7 +30,6 @@ func (s *Store) BeginTx(ctx context.Context) (auth.Tx, error) {
 		return nil, err
 	}
 	return &Tx{
-		tx:      tx,
-		nowFunc: s.nowFunc,
+		tx: tx,
 	}, nil
 }

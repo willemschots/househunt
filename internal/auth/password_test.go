@@ -9,7 +9,39 @@ import (
 	"testing"
 
 	"github.com/willemschots/househunt/internal/auth"
+	"github.com/willemschots/househunt/internal/krypto"
 )
+
+type passwordTest struct {
+	raw     string
+	hashStr string
+}
+
+func passwordTests() map[string]passwordTest {
+	return map[string]passwordTest{
+		"min length ascii": {
+			raw:     "12345678",
+			hashStr: "$argon2id$v=19$m=47104,t=1,p=1$vP9U4C5jsOzFQLj0gvUkYw$YLrSb2dGfcVohlm8syynqHs6/NHxXS9rt/t6TjL7pi0",
+		},
+		"max length ascii": {
+			raw:     stringOfLen(512),
+			hashStr: "$argon2id$v=19$m=47104,t=1,p=1$Ndxt51GJNM44qImzaA9REw$t3YTeou+mW65MzPn7n6kF2boqiO4z1LQl24PzXW7rEY",
+		},
+		"non-ascii": {
+			raw:     "🥸🥸🥸",
+			hashStr: "$argon2id$v=19$m=47104,t=1,p=1$CkX5zzYLJMWm0y/17eScyw$Qfah+NewdsdeF0+iV72mShZhRO93Qwzdj17TUZCH6ZU",
+		},
+	}
+}
+
+func stringOfLen(x int) string {
+	alphabet := "1234567890abcdefghijklmnopqrstuvwxyz"
+	out := make([]byte, x)
+	for i := 0; i < x; i++ {
+		out[i] = alphabet[i%len(alphabet)]
+	}
+	return string(out)
+}
 
 func Test_Password_ParseHashMatch(t *testing.T) {
 	for name, tc := range passwordTests() {
@@ -30,9 +62,11 @@ func Test_Password_ParseHashMatch(t *testing.T) {
 				t.Errorf("password\n%s\ndoes match own hash\n%+v", tc.raw, hash)
 			}
 
+			otherHash := must(krypto.ParseArgon2Hash(tc.hashStr))
+
 			// We also check if the password matches the other known hash.
-			if !pwd.Match(tc.hash) {
-				t.Errorf("password\n%s\ndoes match other hash\n%+v", tc.raw, tc.hash)
+			if !pwd.Match(otherHash) {
+				t.Errorf("password\n%s\ndoes match other hash\n%+v", tc.raw, otherHash)
 			}
 		})
 	}
@@ -53,7 +87,7 @@ func Test_Password_ParseHashMatch(t *testing.T) {
 
 	t.Run("ok, password matches hash with different settings", func(t *testing.T) {
 		// Taken these settings from the tests in the argon2 package.
-		hash := auth.Argon2Hash{
+		hash := krypto.Argon2Hash{
 			Variant:     "argon2id",
 			Version:     19,
 			MemoryKiB:   64,
