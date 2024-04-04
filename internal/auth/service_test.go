@@ -13,6 +13,7 @@ import (
 	"github.com/willemschots/househunt/internal/email"
 	"github.com/willemschots/househunt/internal/errorz"
 	"github.com/willemschots/househunt/internal/errorz/testerr"
+	"github.com/willemschots/househunt/internal/krypto"
 )
 
 func Test_Service_RegisterAccount(t *testing.T) {
@@ -222,7 +223,7 @@ func Test_Service_ActivateAccount(t *testing.T) {
 	t.Run("fail, non-matching token", func(t *testing.T) {
 		svc, deps, req := setup(t)
 
-		req.Token = must(auth.ParseToken("0102030405060708091011121314151617181920212223242526272829303132"))
+		req.Token = must(krypto.ParseToken("0102030405060708091011121314151617181920212223242526272829303132"))
 
 		err := svc.ActivateAccount(context.Background(), req)
 		if !errors.Is(err, errorz.ErrNotFound) {

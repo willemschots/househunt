@@ -2,11 +2,12 @@ package auth
 
 import (
 	"fmt"
+
+	"github.com/willemschots/househunt/internal/krypto"
 )
 
 const (
-	saltLen = 16
-	keyLen  = 32
+	keyLen = 32
 
 	minPasswordBytes = 8
 	// We put a generous upper cap on password length, so people can use
@@ -46,13 +47,15 @@ func ParsePassword(pwd string) (Password, error) {
 }
 
 // Match checks if the plaintext password matches the given hash.
-func (p Password) Match(h Argon2Hash) bool {
-	return matchHash(h, p.plain)
+func (p Password) Match(h krypto.Argon2Hash) bool {
+	// Need to invert the call because we don't want to expose p.plain.
+	return h.MatchBytes(p.plain)
 }
 
 // Hash hashes the plaintext password using the argon2id algorithm.
-func (p Password) Hash() (Argon2Hash, error) {
-	return hashBytes(p.plain)
+func (p Password) Hash() (krypto.Argon2Hash, error) {
+	// Need to invert the call because we don't want to expose p.plain.
+	return krypto.HashArgon2(p.plain)
 }
 
 func (p Password) Format(f fmt.State, verb rune) {

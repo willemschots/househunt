@@ -8,6 +8,7 @@ import (
 
 	"github.com/willemschots/househunt/internal/email"
 	"github.com/willemschots/househunt/internal/errorz"
+	"github.com/willemschots/househunt/internal/krypto"
 )
 
 var (
@@ -106,12 +107,12 @@ func (s *Service) RegisterAccount(_ context.Context, c Credentials) error {
 //
 // If an active user with the same email address exists, ErrDuplicateAccount is returned.
 func (s *Service) startActivation(ctx context.Context, user User) error {
-	token, err := GenerateToken()
+	token, err := krypto.GenerateToken()
 	if err != nil {
 		return err
 	}
 
-	tokenHash, err := token.Hash()
+	tokenHash, err := krypto.HashArgon2(token[:])
 	if err != nil {
 		return err
 	}
@@ -184,7 +185,7 @@ func (s *Service) startActivation(ctx context.Context, user User) error {
 // ActivationRequest is a request to activate an account.
 type ActivationRequest struct {
 	ID    int
-	Token Token
+	Token krypto.Token
 }
 
 // ActivateAccount attempts to activate the requested account.
@@ -217,7 +218,7 @@ func (s *Service) ActivateAccount(ctx context.Context, req ActivationRequest) er
 		}
 
 		// Check if the provided token matches the stored hash.
-		if !req.Token.Match(token.TokenHash) {
+		if !token.TokenHash.MatchBytes(req.Token[:]) {
 			return errorz.ErrNotFound
 		}
 

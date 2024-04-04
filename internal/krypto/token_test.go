@@ -1,4 +1,4 @@
-package auth_test
+package krypto_test
 
 import (
 	"bytes"
@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/willemschots/househunt/internal/auth"
+	"github.com/willemschots/househunt/internal/krypto"
 )
 
 func failTextToToken() map[string]string {
@@ -21,7 +21,7 @@ func failTextToToken() map[string]string {
 
 func Test_Token_GenerateToken(t *testing.T) {
 	t.Run("ok, generate a token", func(t *testing.T) {
-		tok, err := auth.GenerateToken()
+		tok, err := krypto.GenerateToken()
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -34,7 +34,7 @@ func Test_Token_GenerateToken(t *testing.T) {
 
 func Test_Token_ParseString(t *testing.T) {
 	t.Run("ok, valid", func(t *testing.T) {
-		want := auth.Token{
+		want := krypto.Token{
 			0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
 			0x09, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16,
 			0x17, 0x18, 0x19, 0x20, 0x21, 0x22, 0x23, 0x24,
@@ -42,7 +42,7 @@ func Test_Token_ParseString(t *testing.T) {
 		}
 
 		raw := "0102030405060708091011121314151617181920212223242526272829303132"
-		got, err := auth.ParseToken(raw)
+		got, err := krypto.ParseToken(raw)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -58,57 +58,21 @@ func Test_Token_ParseString(t *testing.T) {
 
 	for name, raw := range failTextToToken() {
 		t.Run(name, func(t *testing.T) {
-			_, err := auth.ParseToken(raw)
+			_, err := krypto.ParseToken(raw)
 			if err == nil {
 				t.Fatalf("expected error, got nil")
 			}
 
-			if !errors.Is(err, auth.ErrInvalidToken) {
-				t.Fatalf("expected error %v, got %v ", auth.ErrInvalidToken, err)
+			if !errors.Is(err, krypto.ErrInvalidToken) {
+				t.Fatalf("expected error %v, got %v ", krypto.ErrInvalidToken, err)
 			}
 		})
 	}
 }
 
-func Test_Token_HashAndMatch(t *testing.T) {
-	t.Run("ok, hash and match", func(t *testing.T) {
-		tok, err := auth.GenerateToken()
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		hash, err := tok.Hash()
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		if !tok.Match(hash) {
-			t.Fatalf("expected token to match hash, got no match")
-		}
-	})
-
-	t.Run("ok, match existing token", func(t *testing.T) {
-		tok := must(auth.ParseToken("0102030405060708091011121314151617181920212223242526272829303132"))
-		hash := must(auth.ParseArgon2Hash("$argon2id$v=19$m=47104,t=1,p=1$rSfnv7764FDPkWSk1zCRfA$nFV41xxTo0rNWkAXtozwgyQWTzon/TF58j6+ZDhz1Xg"))
-
-		if !tok.Match(hash) {
-			t.Fatalf("expected token to match hash, got no match")
-		}
-	})
-
-	t.Run("ok, no match", func(t *testing.T) {
-		tok := must(auth.ParseToken("3202030405060708091011121314151617181920212223242526272829303132"))
-		hash := must(auth.ParseArgon2Hash("$argon2id$v=19$m=47104,t=1,p=1$rSfnv7764FDPkWSk1zCRfA$nFV41xxTo0rNWkAXtozwgyQWTzon/TF58j6+ZDhz1Xg"))
-
-		if tok.Match(hash) {
-			t.Fatalf("did not expect token to match, but it did")
-		}
-	})
-}
-
 func Test_Token_PreventExposure(t *testing.T) {
 	t.Run("ok, log output", func(t *testing.T) {
-		tok, err := auth.GenerateToken()
+		tok, err := krypto.GenerateToken()
 		if err != nil {
 			t.Fatalf("failed to generate token: %v", err)
 		}
@@ -120,8 +84,8 @@ func Test_Token_PreventExposure(t *testing.T) {
 		logger.Info("attempting to log a password", "password", tok)
 
 		s := buf.String()
-		if !strings.Contains(s, auth.SecretMarker) {
-			t.Errorf("log output\n%s\ndoes not contain secret marker: %s", s, auth.SecretMarker)
+		if !strings.Contains(s, krypto.SecretMarker) {
+			t.Errorf("log output\n%s\ndoes not contain secret marker: %s", s, krypto.SecretMarker)
 		}
 
 		raw := tok.String()

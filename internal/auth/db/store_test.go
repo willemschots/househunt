@@ -13,6 +13,7 @@ import (
 	"github.com/willemschots/househunt/internal/db/testdb"
 	"github.com/willemschots/househunt/internal/email"
 	"github.com/willemschots/househunt/internal/errorz"
+	"github.com/willemschots/househunt/internal/krypto"
 )
 
 func Test_Tx_CreateUser(t *testing.T) {
@@ -80,7 +81,7 @@ func Test_Tx_UpdateUser(t *testing.T) {
 
 		// Update all fields that can be modified.
 		user.Email = must(email.ParseAddress("jacob@example.com"))
-		user.PasswordHash = must(auth.ParseArgon2Hash("$argon2id$v=19$m=47104,t=1,p=1$CkX5zzYLJMWm0y/17eScyw$Qfah+NewdsdeF0+iV72mShZhRO93Qwzdj17TUZCH6ZU"))
+		user.PasswordHash = must(krypto.ParseArgon2Hash("$argon2id$v=19$m=47104,t=1,p=1$CkX5zzYLJMWm0y/17eScyw$Qfah+NewdsdeF0+iV72mShZhRO93Qwzdj17TUZCH6ZU"))
 		user.IsActive = true
 
 		err := tx.UpdateUser(&user)
@@ -91,7 +92,7 @@ func Test_Tx_UpdateUser(t *testing.T) {
 		want := newUser(t, func(u *auth.User) {
 			u.ID = 1
 			u.Email = must(email.ParseAddress("jacob@example.com"))
-			u.PasswordHash = must(auth.ParseArgon2Hash("$argon2id$v=19$m=47104,t=1,p=1$CkX5zzYLJMWm0y/17eScyw$Qfah+NewdsdeF0+iV72mShZhRO93Qwzdj17TUZCH6ZU"))
+			u.PasswordHash = must(krypto.ParseArgon2Hash("$argon2id$v=19$m=47104,t=1,p=1$CkX5zzYLJMWm0y/17eScyw$Qfah+NewdsdeF0+iV72mShZhRO93Qwzdj17TUZCH6ZU"))
 			u.IsActive = true
 			u.CreatedAt = now(t, 0)
 			u.UpdatedAt = now(t, 1) // The store should update the UpdatedAt field.
@@ -370,7 +371,7 @@ func Test_Tx_UpdateEmailToken(t *testing.T) {
 
 	immutableFields := map[string]func(*auth.EmailToken, auth.User){
 		"TokenHash": func(tok *auth.EmailToken, _ auth.User) {
-			tok.TokenHash = must(auth.ParseArgon2Hash("$argon2id$v=19$m=47104,t=1,p=1$vP9U4C5jsOzFQLj0gvUkYw$YLrSb2dGfcVohlm8syynqHs6/NHxXS9rt/t6TjL7pi0"))
+			tok.TokenHash = must(krypto.ParseArgon2Hash("$argon2id$v=19$m=47104,t=1,p=1$vP9U4C5jsOzFQLj0gvUkYw$YLrSb2dGfcVohlm8syynqHs6/NHxXS9rt/t6TjL7pi0"))
 		},
 		"UserID": func(tok *auth.EmailToken, user2 auth.User) {
 			tok.UserID = user2.ID
@@ -648,7 +649,7 @@ func newUser(t *testing.T, modFunc func(*auth.User)) auth.User {
 	u := auth.User{
 		ID:           0,
 		Email:        must(email.ParseAddress("alice@example.com")),
-		PasswordHash: must(auth.ParseArgon2Hash("$argon2id$v=19$m=47104,t=1,p=1$vP9U4C5jsOzFQLj0gvUkYw$YLrSb2dGfcVohlm8syynqHs6/NHxXS9rt/t6TjL7pi0")),
+		PasswordHash: must(krypto.ParseArgon2Hash("$argon2id$v=19$m=47104,t=1,p=1$vP9U4C5jsOzFQLj0gvUkYw$YLrSb2dGfcVohlm8syynqHs6/NHxXS9rt/t6TjL7pi0")),
 		CreatedAt:    time.Time{},
 		UpdatedAt:    time.Time{},
 	}
@@ -664,7 +665,7 @@ func newEmailToken(t *testing.T, modFunc func(*auth.EmailToken)) auth.EmailToken
 	t.Helper()
 
 	tok := auth.EmailToken{
-		TokenHash:  must(auth.ParseArgon2Hash("$argon2id$v=19$m=47104,t=1,p=1$CkX5zzYLJMWm0y/17eScyw$Qfah+NewdsdeF0+iV72mShZhRO93Qwzdj17TUZCH6ZU")),
+		TokenHash:  must(krypto.ParseArgon2Hash("$argon2id$v=19$m=47104,t=1,p=1$CkX5zzYLJMWm0y/17eScyw$Qfah+NewdsdeF0+iV72mShZhRO93Qwzdj17TUZCH6ZU")),
 		UserID:     1,
 		Email:      must(email.ParseAddress("alice@example.com")),
 		Purpose:    auth.TokenPurposeActivate,
