@@ -578,8 +578,13 @@ func now(t *testing.T, i int) time.Time {
 func storeForTest(t *testing.T) *db.Store {
 	t.Helper()
 
+	encryptor := must(krypto.NewEncryptor([]krypto.Key{
+		must(krypto.ParseKey("2b671594b775f371eab4050b4d58326682df6b1a6cc2e886717b1a26b4d6c45d")),
+	}))
+	indexKey := must(krypto.ParseKey("90303dfed7994260ea4817a5ca8a392915cd401115b2f97495dadfcbcd14adbf"))
+
 	testDB := testdb.RunWhile(t, true)
-	return db.New(testDB)
+	return db.New(testDB, encryptor, indexKey)
 }
 
 func newUser(t *testing.T, modFunc func(*auth.User)) auth.User {

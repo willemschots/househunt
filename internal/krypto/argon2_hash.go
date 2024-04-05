@@ -40,14 +40,28 @@ type Argon2Hash struct {
 
 // HashArgon2 hashes a byte slice using the argon2id algorithm.
 func HashArgon2(b []byte) (Argon2Hash, error) {
-	if len(b) == 0 {
-		return Argon2Hash{}, fmt.Errorf("empty byte slice: %w", ErrInvalidInput)
-	}
-
 	// First we generate a salt.
 	salt, err := genRandomBytes(saltLen)
 	if err != nil {
 		return Argon2Hash{}, fmt.Errorf("failed to generate salt: %w", err)
+	}
+
+	return hashArgon2WithSalt(b, salt)
+}
+
+// HashArgon2WithKey hashes a byte slice using the argon2id algorithm and uses the provided key as a salt.
+func HashArgon2WithKey(b []byte, salt Key) (Argon2Hash, error) {
+	if len(salt.value) <= saltLen {
+		return Argon2Hash{}, fmt.Errorf("salt too short: %w", ErrInvalidInput)
+	}
+
+	return hashArgon2WithSalt(b, salt.value[:saltLen])
+}
+
+// hashArgon2WithSalt hashes a byte slice using the argon2id algorithm with the provided salt.
+func hashArgon2WithSalt(b []byte, salt []byte) (Argon2Hash, error) {
+	if len(b) == 0 {
+		return Argon2Hash{}, fmt.Errorf("empty byte slice: %w", ErrInvalidInput)
 	}
 
 	// Then we hash the bytes.
