@@ -385,9 +385,15 @@ type svcDeps struct {
 }
 
 func setupService(t *testing.T, cfgFunc func(*auth.ServiceConfig)) (*auth.Service, *svcDeps) {
+	encryptor := must(krypto.NewEncryptor([]krypto.Key{
+		must(krypto.ParseKey("2b671594b775f371eab4050b4d58326682df6b1a6cc2e886717b1a26b4d6c45d")),
+	}))
+
+	indexKey := must(krypto.ParseKey("90303dfed7994260ea4817a5ca8a392915cd401115b2f97495dadfcbcd14adbf"))
+
 	deps := &svcDeps{
 		store: &testStore{
-			store:   db.New(testdb.RunWhile(t, true)),
+			store:   db.New(testdb.RunWhile(t, true), encryptor, indexKey),
 			tracker: &testerr.Calltracker{}, // empty call trackers never fail.
 		},
 		errList: &errList{
