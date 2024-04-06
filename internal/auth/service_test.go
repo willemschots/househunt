@@ -18,7 +18,7 @@ import (
 
 func Test_Service_RegisterAccount(t *testing.T) {
 	t.Run("ok, register account", func(t *testing.T) {
-		svc, deps := setupService(t, nil)
+		svc, deps := setupService(t)
 
 		credentials := auth.Credentials{
 			Email:    must(email.ParseAddress("info@example.com")),
@@ -43,7 +43,7 @@ func Test_Service_RegisterAccount(t *testing.T) {
 	})
 
 	t.Run("ok, re-register non-activated account", func(t *testing.T) {
-		svc, deps := setupService(t, nil)
+		svc, deps := setupService(t)
 
 		credentials := auth.Credentials{
 			Email:    must(email.ParseAddress("info@example.com")),
@@ -78,7 +78,7 @@ func Test_Service_RegisterAccount(t *testing.T) {
 	})
 
 	t.Run("fail async, re-register active account", func(t *testing.T) {
-		svc, deps := setupService(t, nil)
+		svc, deps := setupService(t)
 
 		credentials := auth.Credentials{
 			Email:    must(email.ParseAddress("info@example.com")),
@@ -128,7 +128,7 @@ func Test_Service_RegisterAccount(t *testing.T) {
 
 	for _, tracker := range testerr.NewFailingDeps(testerr.Err, 5) {
 		t.Run("fail async, store fails", func(t *testing.T) {
-			svc, deps := setupService(t, nil)
+			svc, deps := setupService(t)
 			deps.store.tracker = &tracker
 
 			credentials := auth.Credentials{
@@ -154,7 +154,7 @@ func Test_Service_RegisterAccount(t *testing.T) {
 	}
 
 	t.Run("fail sync, emailer fails", func(t *testing.T) {
-		svc, deps := setupService(t, nil)
+		svc, deps := setupService(t)
 		deps.emailer.testErr = testerr.Err
 
 		credentials := auth.Credentials{
@@ -199,7 +199,7 @@ func Test_Service_ActivateAccount(t *testing.T) {
 
 	// setup the test by registering an account and getting the activation request.
 	setup := func(t *testing.T) (*auth.Service, *svcDeps, auth.ActivationRequest) {
-		svc, deps := setupService(t, nil)
+		svc, deps := setupService(t)
 
 		request := registerAndGetRequest(t, svc, deps)
 
@@ -214,9 +214,8 @@ func Test_Service_ActivateAccount(t *testing.T) {
 			t.Fatalf("failed to activate account: %v", err)
 		}
 
-		// wait for the service goroutine to finish activating.
+		// assert no async errors were reported.
 		svc.Wait()
-
 		deps.errList.assertNoError(t)
 	})
 
@@ -230,9 +229,8 @@ func Test_Service_ActivateAccount(t *testing.T) {
 			t.Fatalf("expected error %v, got %v", errorz.ErrNotFound, err)
 		}
 
-		// wait for the service goroutine to finish activating.
+		// assert no async errors were reported.
 		svc.Wait()
-
 		deps.errList.assertNoError(t)
 	})
 
@@ -246,9 +244,8 @@ func Test_Service_ActivateAccount(t *testing.T) {
 			t.Fatalf("expected error %v, got %v", errorz.ErrNotFound, err)
 		}
 
-		// wait for the service goroutine to finish activating.
+		// assert no async errors were reported.
 		svc.Wait()
-
 		deps.errList.assertNoError(t)
 	})
 
@@ -267,9 +264,8 @@ func Test_Service_ActivateAccount(t *testing.T) {
 			t.Fatalf("expected error %v, got %v", errorz.ErrNotFound, err)
 		}
 
-		// wait for the service goroutine to finish activating.
+		// assert no async errors were reported.
 		svc.Wait()
-
 		deps.errList.assertNoError(t)
 	})
 
@@ -292,9 +288,8 @@ func Test_Service_ActivateAccount(t *testing.T) {
 			t.Fatalf("expected error %v, got %v", errorz.ErrNotFound, err)
 		}
 
-		// wait for the service goroutine to finish activating.
+		// assert no async errors were reported.
 		svc.Wait()
-
 		deps.errList.assertNoError(t)
 	})
 
@@ -312,9 +307,8 @@ func Test_Service_ActivateAccount(t *testing.T) {
 			t.Fatalf("expected error %v, got %v", errorz.ErrNotFound, err)
 		}
 
-		// wait for the service goroutine to finish activating.
+		// assert no async errors were reported.
 		svc.Wait()
-
 		deps.errList.assertNoError(t)
 	})
 
@@ -332,12 +326,132 @@ func Test_Service_ActivateAccount(t *testing.T) {
 				t.Fatalf("expected error %v, got %v (via errors.Is)", testerr.Err, err)
 			}
 
-			// wait for the service goroutine to finish activating.
+			// assert no async errors were reported.
 			svc.Wait()
-
 			deps.errList.assertNoError(t)
 		})
 	}
+}
+
+func Test_Service_Authenticate(t *testing.T) {
+	setup := func(t *testing.T, activate bool) (*auth.Service, *svcDeps, auth.Credentials) {
+		svc, deps := setupService(t)
+
+		credentials := auth.Credentials{
+			Email:    must(email.ParseAddress("info@example.com")),
+			Password: must(auth.ParsePassword("reallyStrongPassword1")),
+		}
+
+		err := svc.RegisterAccount(context.Background(), credentials)
+		if err != nil {
+			t.Fatalf("failed to register account: %v", err)
+		}
+
+		svc.Wait()
+
+		if activate {
+			// Get the last email that was sent to retrieve the activation request.
+			index := len(deps.emailer.emails) - 1
+			request, ok := deps.emailer.emails[index].data.(auth.ActivationRequest)
+			if !ok {
+				t.Fatalf("unexpected data type: %T", deps.emailer.emails[index].data)
+			}
+
+			err = svc.ActivateAccount(context.Background(), request)
+			if err != nil {
+				t.Fatalf("failed to activate account: %v", err)
+			}
+		}
+
+		return svc, deps, credentials
+	}
+
+	t.Run("ok, right credentials", func(t *testing.T) {
+		svc, deps, credentials := setup(t, true)
+
+		authenticated, err := svc.Authenticate(context.Background(), credentials)
+		if err != nil {
+			t.Fatalf("failed to authenticate: %v", err)
+		}
+
+		if !authenticated {
+			t.Fatalf("expected authentication to succeed")
+		}
+
+		// assert no async errors were reported.
+		svc.Wait()
+		deps.errList.assertNoError(t)
+	})
+
+	t.Run("ok, failed to authenticate, wrong password", func(t *testing.T) {
+		svc, deps, credentials := setup(t, true)
+
+		credentials.Password = must(auth.ParsePassword("wrongPassword"))
+
+		authenticated, err := svc.Authenticate(context.Background(), credentials)
+		if err != nil {
+			t.Fatalf("failed to authenticate: %v", err)
+		}
+
+		if authenticated {
+			t.Fatalf("expected authentication to fail")
+		}
+
+		// assert no async errors were reported.
+		svc.Wait()
+		deps.errList.assertNoError(t)
+	})
+
+	t.Run("ok, failed to authenticate, non-existant account", func(t *testing.T) {
+		svc, deps, credentials := setup(t, true)
+
+		credentials.Email = must(email.ParseAddress("jacob@example.com"))
+
+		authenticated, err := svc.Authenticate(context.Background(), credentials)
+		if err != nil {
+			t.Fatalf("failed to authenticate: %v", err)
+		}
+
+		if authenticated {
+			t.Fatalf("expected authentication to fail")
+		}
+
+		// assert no async errors were reported.
+		svc.Wait()
+		deps.errList.assertNoError(t)
+	})
+
+	t.Run("ok, failed to authenticate, account not activated", func(t *testing.T) {
+		svc, deps, credentials := setup(t, false)
+
+		authenticated, err := svc.Authenticate(context.Background(), credentials)
+		if err != nil {
+			t.Fatalf("failed to authenticate: %v", err)
+		}
+
+		if authenticated {
+			t.Fatalf("expected authentication to fail")
+		}
+
+		// assert no async errors were reported.
+		svc.Wait()
+		deps.errList.assertNoError(t)
+	})
+
+	t.Run("fail, store fails", func(t *testing.T) {
+		svc, deps, credentials := setup(t, true)
+		failingDeps := testerr.NewFailingDeps(testerr.Err, 1)
+		deps.store.tracker = &failingDeps[0]
+
+		_, err := svc.Authenticate(context.Background(), credentials)
+		if !errors.Is(err, testerr.Err) {
+			t.Fatalf("expected error %v, got %v (via errors.Is)", testerr.Err, err)
+		}
+
+		// assert no async errors were reported.
+		svc.Wait()
+		deps.errList.assertNoError(t)
+	})
 }
 
 type errList struct {
@@ -384,16 +498,17 @@ type svcDeps struct {
 	nowFunc func() time.Time
 }
 
-func setupService(t *testing.T, cfgFunc func(*auth.ServiceConfig)) (*auth.Service, *svcDeps) {
+func setupService(t *testing.T) (*auth.Service, *svcDeps) {
 	encryptor := must(krypto.NewEncryptor([]krypto.Key{
 		must(krypto.ParseKey("2b671594b775f371eab4050b4d58326682df6b1a6cc2e886717b1a26b4d6c45d")),
 	}))
 
 	indexKey := must(krypto.ParseKey("90303dfed7994260ea4817a5ca8a392915cd401115b2f97495dadfcbcd14adbf"))
 
+	testDB := testdb.RunWhile(t, true)
 	deps := &svcDeps{
 		store: &testStore{
-			store:   db.New(testdb.RunWhile(t, true), encryptor, indexKey),
+			store:   db.New(testDB, testDB, encryptor, indexKey),
 			tracker: &testerr.Calltracker{}, // empty call trackers never fail.
 		},
 		errList: &errList{
@@ -411,11 +526,10 @@ func setupService(t *testing.T, cfgFunc func(*auth.ServiceConfig)) (*auth.Servic
 		TokenExpiry:   time.Hour,
 	}
 
-	if cfgFunc != nil {
-		cfgFunc(&cfg)
+	svc, err := auth.NewService(deps.store, deps.emailer, deps.errList.AppendErr, cfg)
+	if err != nil {
+		t.Fatalf("failed to create service: %v", err)
 	}
-
-	svc := auth.NewService(deps.store, deps.emailer, deps.errList.AppendErr, cfg)
 
 	return svc, deps
 }
@@ -434,6 +548,12 @@ func (f *testStore) BeginTx(ctx context.Context) (auth.Tx, error) {
 			store: f,
 			tx:    realTx,
 		}, err
+	})
+}
+
+func (f *testStore) FindUsers(ctx context.Context, filter *auth.UserFilter) ([]auth.User, error) {
+	return testerr.MaybeFail(f.tracker, func() ([]auth.User, error) {
+		return f.store.FindUsers(ctx, filter)
 	})
 }
 

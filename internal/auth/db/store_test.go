@@ -259,7 +259,23 @@ func Test_Tx_FindUser(t *testing.T) {
 			users := setupUsers(t, tx)
 			want := tc.wantFunc(users)
 
+			// first check if FindUsers works on the tx
 			got, err := tx.FindUsers(tc.filter)
+			if err != nil {
+				t.Fatalf("failed to find users: %v", err)
+			}
+
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("got\n%#v\nwant\n%#v\n", got, want)
+			}
+
+			err = tx.Commit()
+			if err != nil {
+				t.Fatalf("failed to commit tx: %v", err)
+			}
+
+			// then, check if FindUsers works on the store itself.
+			got, err = store.FindUsers(context.Background(), tc.filter)
 			if err != nil {
 				t.Fatalf("failed to find users: %v", err)
 			}
@@ -584,7 +600,7 @@ func storeForTest(t *testing.T) *db.Store {
 	indexKey := must(krypto.ParseKey("90303dfed7994260ea4817a5ca8a392915cd401115b2f97495dadfcbcd14adbf"))
 
 	testDB := testdb.RunWhile(t, true)
-	return db.New(testDB, encryptor, indexKey)
+	return db.New(testDB, testDB, encryptor, indexKey)
 }
 
 func newUser(t *testing.T, modFunc func(*auth.User)) auth.User {
