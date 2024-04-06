@@ -28,6 +28,8 @@ type EmailTokenFilter struct {
 // Store provides access to the user store.
 type Store interface {
 	BeginTx(ctx context.Context) (Tx, error)
+
+	FindUsers(ctx context.Context, filter *UserFilter) ([]User, error)
 }
 
 // Tx is a transaction. If an error occurs on any of the Create/Update/Find methods,

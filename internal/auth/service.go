@@ -41,22 +41,36 @@ type Service struct {
 	errHandler ErrFunc
 	cfg        ServiceConfig
 
+	// comparisonHash is used to compare passwords when no user was found.
+	comparisonHash krypto.Argon2Hash
+
 	// NowFunc is used to get the current time.
 	// Exposed for testing purposes.
 	NowFunc func() time.Time
 }
 
-func NewService(s Store, emailer Emailer, errHandler ErrFunc, cfg ServiceConfig) *Service {
-	svc := &Service{
-		store:      s,
-		emailer:    emailer,
-		wg:         &sync.WaitGroup{},
-		errHandler: errHandler,
-		cfg:        cfg,
-		NowFunc:    time.Now,
+func NewService(s Store, emailer Emailer, errHandler ErrFunc, cfg ServiceConfig) (*Service, error) {
+	tok, err := krypto.GenerateToken()
+	if err != nil {
+		return nil, err
 	}
 
-	return svc
+	hash, err := krypto.HashArgon2(tok[:])
+	if err != nil {
+		return nil, err
+	}
+
+	svc := &Service{
+		store:          s,
+		emailer:        emailer,
+		wg:             &sync.WaitGroup{},
+		errHandler:     errHandler,
+		cfg:            cfg,
+		comparisonHash: hash,
+		NowFunc:        time.Now,
+	}
+
+	return svc, nil
 }
 
 // Wait waits for all open workers to finish.
@@ -65,6 +79,9 @@ func (s *Service) Wait() {
 }
 
 // RegisterAccount registers a new account for the provided credentials.
+// The main work of this method is done in a separate goroutine, the returned
+// error does not indicate whether an account was created or not. This is by
+// design to prevent information leakage.
 func (s *Service) RegisterAccount(_ context.Context, c Credentials) error {
 	// Hash the password.
 	pwdHash, err := c.Password.Hash()
@@ -267,6 +284,25 @@ func (s *Service) ActivateAccount(ctx context.Context, req ActivationRequest) er
 
 		return nil
 	})
+}
+
+// Authenticate checks if the provided credentials are valid.
+func (s *Service) Authenticate(ctx context.Context, c Credentials) (bool, error) {
+	users, err := s.store.FindUsers(ctx, &UserFilter{
+		Emails:   []email.Address{c.Email},
+		IsActive: ptr(true),
+	})
+	if err != nil {
+		return false, err
+	}
+
+	if len(users) != 1 {
+		// Still compare to a hash to prevent timing attacks.
+		_ = c.Password.Match(s.comparisonHash)
+		return false, nil
+	}
+
+	return c.Password.Match(users[0].PasswordHash), nil
 }
 
 func (s *Service) inTx(ctx context.Context, f func(tx Tx) error) error {
