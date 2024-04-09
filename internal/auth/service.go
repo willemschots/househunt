@@ -23,7 +23,9 @@ type Emailer interface {
 // ErrFunc is a function that handles errors.
 type ErrFunc func(error)
 
-// ServiceConfig is the configuration for the Service.
+// ServiceConfig is the configuration for the Service. Some methods run in seperate goroutines,
+// it is up to the caller to wait for these methods to finish. This can be done by calling the
+// Wait method.
 type ServiceConfig struct {
 	// WorkerTimeout is the max duration worker goroutines are allowed
 	// to take befor they are cancelled.
@@ -49,6 +51,7 @@ type Service struct {
 	NowFunc func() time.Time
 }
 
+// NewService creates a new Service.
 func NewService(s Store, emailer Emailer, errHandler ErrFunc, cfg ServiceConfig) (*Service, error) {
 	tok, err := krypto.GenerateToken()
 	if err != nil {
