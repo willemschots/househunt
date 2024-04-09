@@ -38,7 +38,7 @@ func Test_Service_RegisterUser(t *testing.T) {
 
 		// Assert that an email was send to the email address.
 		st.emailer.assertLastEmail(t, "user-activation", credentials.Email, func(t *testing.T, data any) {
-			req, ok := data.(auth.ActivationRequest)
+			req, ok := data.(auth.EmailTokenRaw)
 			if !ok {
 				t.Fatalf("unexpected data type: %T", data)
 			}
@@ -54,7 +54,7 @@ func Test_Service_RegisterUser(t *testing.T) {
 	t.Run("ok, re-register non-activated user", func(t *testing.T) {
 		st := newServiceTest(t)
 		credentials, _ := st.registerUser()
-		st.emailer.resetEmails()
+		st.emailer.clearEmails()
 
 		// Register again.
 		err := st.svc.RegisterUser(context.Background(), credentials)
@@ -70,7 +70,7 @@ func Test_Service_RegisterUser(t *testing.T) {
 
 		// Assert that an email was send to the email address again.
 		st.emailer.assertLastEmail(t, "user-activation", credentials.Email, func(t *testing.T, data any) {
-			req, ok := data.(auth.ActivationRequest)
+			req, ok := data.(auth.EmailTokenRaw)
 			if !ok {
 				t.Fatalf("unexpected data type: %T", data)
 			}
@@ -85,9 +85,9 @@ func Test_Service_RegisterUser(t *testing.T) {
 
 	t.Run("fail async, re-register active user", func(t *testing.T) {
 		st := newServiceTest(t)
-		credentials, request := st.registerUser()
-		st.activateUser(request)
-		st.emailer.resetEmails()
+		credentials, activationTok := st.registerUser()
+		st.activateUser(activationTok)
+		st.emailer.clearEmails()
 
 		// Register again.
 		err := st.svc.RegisterUser(context.Background(), credentials)
@@ -149,9 +149,9 @@ func Test_Service_RegisterUser(t *testing.T) {
 func Test_Service_ActivateUser(t *testing.T) {
 	t.Run("ok, activate non-activated user", func(t *testing.T) {
 		st := newServiceTest(t)
-		_, req := st.registerUser()
+		_, tok := st.registerUser()
 
-		err := st.svc.ActivateUser(context.Background(), req)
+		err := st.svc.ActivateUser(context.Background(), tok)
 		if err != nil {
 			t.Fatalf("failed to activate user: %v", err)
 		}
@@ -163,11 +163,11 @@ func Test_Service_ActivateUser(t *testing.T) {
 
 	t.Run("fail, non-matching token", func(t *testing.T) {
 		st := newServiceTest(t)
-		_, req := st.registerUser()
+		_, tok := st.registerUser()
 
-		req.Token = must(krypto.ParseToken("0102030405060708091011121314151617181920212223242526272829303132"))
+		tok.Token = must(krypto.ParseToken("0102030405060708091011121314151617181920212223242526272829303132"))
 
-		err := st.svc.ActivateUser(context.Background(), req)
+		err := st.svc.ActivateUser(context.Background(), tok)
 		if !errors.Is(err, errorz.ErrNotFound) {
 			t.Fatalf("expected error %v, got %v", errorz.ErrNotFound, err)
 		}
@@ -179,11 +179,11 @@ func Test_Service_ActivateUser(t *testing.T) {
 
 	t.Run("fail, non-existant token", func(t *testing.T) {
 		st := newServiceTest(t)
-		_, req := st.registerUser()
+		_, tok := st.registerUser()
 
-		req.ID = 2
+		tok.ID = 2
 
-		err := st.svc.ActivateUser(context.Background(), req)
+		err := st.svc.ActivateUser(context.Background(), tok)
 		if !errors.Is(err, errorz.ErrNotFound) {
 			t.Fatalf("expected error %v, got %v", errorz.ErrNotFound, err)
 		}
@@ -195,13 +195,13 @@ func Test_Service_ActivateUser(t *testing.T) {
 
 	t.Run("fail, token already consumed", func(t *testing.T) {
 		st := newServiceTest(t)
-		_, req := st.registerUser()
+		_, tok := st.registerUser()
 
 		// Consume token once.
-		st.activateUser(req)
+		st.activateUser(tok)
 
 		// Consume token again.
-		err := st.svc.ActivateUser(context.Background(), req)
+		err := st.svc.ActivateUser(context.Background(), tok)
 		if !errors.Is(err, errorz.ErrNotFound) {
 			t.Fatalf("expected error %v, got %v", errorz.ErrNotFound, err)
 		}
@@ -215,14 +215,14 @@ func Test_Service_ActivateUser(t *testing.T) {
 		st := newServiceTest(t)
 
 		// register same user twice.
-		_, req1 := st.registerUser()
-		_, req2 := st.registerUser()
+		_, tok1 := st.registerUser()
+		_, tok2 := st.registerUser()
 
 		// activate user with the second token.
-		st.activateUser(req2)
+		st.activateUser(tok2)
 
 		// now try with the first token.
-		err := st.svc.ActivateUser(context.Background(), req1)
+		err := st.svc.ActivateUser(context.Background(), tok1)
 		if !errors.Is(err, errorz.ErrNotFound) {
 			t.Fatalf("expected error %v, got %v", errorz.ErrNotFound, err)
 		}
@@ -234,7 +234,7 @@ func Test_Service_ActivateUser(t *testing.T) {
 
 	t.Run("fail, expired token", func(t *testing.T) {
 		st := newServiceTest(t)
-		_, req := st.registerUser()
+		_, tok := st.registerUser()
 
 		// TokenExpiry is set to 1 hour.
 		// Simulate the current time being an hour ahead.
@@ -242,7 +242,7 @@ func Test_Service_ActivateUser(t *testing.T) {
 			return time.Now().Add(time.Hour + time.Second)
 		}
 
-		err := st.svc.ActivateUser(context.Background(), req)
+		err := st.svc.ActivateUser(context.Background(), tok)
 		if !errors.Is(err, errorz.ErrNotFound) {
 			t.Fatalf("expected error %v, got %v", errorz.ErrNotFound, err)
 		}
@@ -252,17 +252,31 @@ func Test_Service_ActivateUser(t *testing.T) {
 		st.errList.assertNoError(t)
 	})
 
-	//t.Run("fail, token for different purpose", func(t *testing.T) {
-	//	// TODO: Implement this test.
-	//})
+	t.Run("fail, token for different purpose", func(t *testing.T) {
+		st := newServiceTest(t)
+		credentials, aTok := st.registerUser()
+		st.activateUser(aTok)
+		resetTok := st.requestPasswordReset(credentials.Email)
+		st.emailer.clearEmails()
+
+		// Try to activate the user with the reset token.
+		err := st.svc.ActivateUser(context.Background(), resetTok)
+		if !errors.Is(err, errorz.ErrNotFound) {
+			t.Fatalf("expected error %v, got %v", errorz.ErrNotFound, err)
+		}
+
+		// assert no async errors were reported.
+		st.svc.Wait()
+		st.errList.assertNoError(t)
+	})
 
 	for _, tracker := range testerr.NewFailingDeps(testerr.Err, 6) {
 		t.Run("fail, store fails", func(t *testing.T) {
 			st := newServiceTest(t)
-			_, req := st.registerUser()
+			_, tok := st.registerUser()
 			st.store.tracker = &tracker
 
-			err := st.svc.ActivateUser(context.Background(), req)
+			err := st.svc.ActivateUser(context.Background(), tok)
 			if !errors.Is(err, testerr.Err) {
 				t.Fatalf("expected error %v, got %v (via errors.Is)", testerr.Err, err)
 			}
@@ -277,8 +291,8 @@ func Test_Service_ActivateUser(t *testing.T) {
 func Test_Service_Authenticate(t *testing.T) {
 	t.Run("ok, right credentials", func(t *testing.T) {
 		st := newServiceTest(t)
-		credentials, req := st.registerUser()
-		st.activateUser(req)
+		credentials, tok := st.registerUser()
+		st.activateUser(tok)
 
 		authenticated, err := st.svc.Authenticate(context.Background(), credentials)
 		if err != nil {
@@ -296,8 +310,8 @@ func Test_Service_Authenticate(t *testing.T) {
 
 	t.Run("ok, failed to authenticate, wrong password", func(t *testing.T) {
 		st := newServiceTest(t)
-		credentials, req := st.registerUser()
-		st.activateUser(req)
+		credentials, tok := st.registerUser()
+		st.activateUser(tok)
 
 		credentials.Password = must(auth.ParsePassword("wrongPassword"))
 
@@ -317,8 +331,8 @@ func Test_Service_Authenticate(t *testing.T) {
 
 	t.Run("ok, failed to authenticate, non-existant user", func(t *testing.T) {
 		st := newServiceTest(t)
-		credentials, req := st.registerUser()
-		st.activateUser(req)
+		credentials, tok := st.registerUser()
+		st.activateUser(tok)
 
 		credentials.Email = must(email.ParseAddress("jacob@example.com"))
 
@@ -356,8 +370,8 @@ func Test_Service_Authenticate(t *testing.T) {
 
 	t.Run("fail, store fails", func(t *testing.T) {
 		st := newServiceTest(t)
-		credentials, req := st.registerUser()
-		st.activateUser(req)
+		credentials, tok := st.registerUser()
+		st.activateUser(tok)
 
 		failingDeps := testerr.NewFailingDeps(testerr.Err, 1)
 		st.store.tracker = &failingDeps[0]
@@ -376,9 +390,9 @@ func Test_Service_Authenticate(t *testing.T) {
 func Test_Service_RequestPasswordReset(t *testing.T) {
 	t.Run("ok, active user", func(t *testing.T) {
 		st := newServiceTest(t)
-		credentials, req := st.registerUser()
-		st.activateUser(req)
-		st.emailer.resetEmails()
+		credentials, aTok := st.registerUser()
+		st.activateUser(aTok)
+		st.emailer.clearEmails()
 
 		st.svc.RequestPasswordReset(context.Background(), credentials.Email)
 
@@ -389,14 +403,14 @@ func Test_Service_RequestPasswordReset(t *testing.T) {
 		st.errList.assertNoError(t)
 
 		st.emailer.assertLastEmail(t, "password-reset-request", credentials.Email, func(t *testing.T, data any) {
-			req, ok := data.(auth.ActivationRequest)
+			resetTok, ok := data.(auth.EmailTokenRaw)
 			if !ok {
 				t.Fatalf("unexpected data type: %T", data)
 			}
-			if req.ID == 0 {
+			if resetTok.ID == 0 {
 				t.Fatalf("expected ID to be set")
 			}
-			if len(req.Token) == 0 {
+			if len(resetTok.Token) == 0 {
 				t.Fatalf("expected token to be set")
 			}
 		})
@@ -404,9 +418,9 @@ func Test_Service_RequestPasswordReset(t *testing.T) {
 
 	t.Run("fail async, non-existant user", func(t *testing.T) {
 		st := newServiceTest(t)
-		_, req := st.registerUser()
-		st.activateUser(req)
-		st.emailer.resetEmails()
+		_, aTok := st.registerUser()
+		st.activateUser(aTok)
+		st.emailer.clearEmails()
 
 		email := must(email.ParseAddress("jacob@example.com"))
 		st.svc.RequestPasswordReset(context.Background(), email)
@@ -420,7 +434,7 @@ func Test_Service_RequestPasswordReset(t *testing.T) {
 	t.Run("fail async, inactive user", func(t *testing.T) {
 		st := newServiceTest(t)
 		credentials, _ := st.registerUser()
-		st.emailer.resetEmails()
+		st.emailer.clearEmails()
 
 		st.svc.RequestPasswordReset(context.Background(), credentials.Email)
 
@@ -435,9 +449,9 @@ func Test_Service_RequestPasswordReset(t *testing.T) {
 	for _, tracker := range testerr.NewFailingDeps(testerr.Err, 4) {
 		t.Run("fail async, store fails", func(t *testing.T) {
 			st := newServiceTest(t)
-			credentials, req := st.registerUser()
-			st.activateUser(req)
-			st.emailer.resetEmails()
+			credentials, aTok := st.registerUser()
+			st.activateUser(aTok)
+			st.emailer.clearEmails()
 
 			st.store.tracker = &tracker
 
@@ -452,14 +466,267 @@ func Test_Service_RequestPasswordReset(t *testing.T) {
 
 	t.Run("fail async, emailer fails", func(t *testing.T) {
 		st := newServiceTest(t)
-		credentials, req := st.registerUser()
-		st.activateUser(req)
-		st.emailer.resetEmails()
+		credentials, aTok := st.registerUser()
+		st.activateUser(aTok)
+		st.emailer.clearEmails()
 		st.emailer.testErr = testerr.Err
 
 		st.svc.RequestPasswordReset(context.Background(), credentials.Email)
 
 		// Wait for service goroutine to finish registering.
+		st.svc.Wait()
+		st.errList.assertErrorIs(t, testerr.Err)
+	})
+}
+
+func Test_Service_ResetPassword(t *testing.T) {
+	t.Run("ok, reset password", func(t *testing.T) {
+		st := newServiceTest(t)
+		oldCreds, aTok := st.registerUser()
+		st.activateUser(aTok)
+		resetTok := st.requestPasswordReset(oldCreds.Email)
+		st.emailer.clearEmails()
+
+		// Reset the password by providing the reset token and a new password.
+		newPass := auth.NewPassword{
+			Password: must(auth.ParsePassword("otherPassword")),
+			RawToken: resetTok,
+		}
+		err := st.svc.ResetPassword(context.Background(), newPass)
+		if err != nil {
+			t.Fatalf("failed to reset password: %v", err)
+		}
+
+		// Wait for service goroutine to finish.
+		st.svc.Wait()
+		st.errList.assertNoError(t)
+		st.emailer.assertLastEmail(t, "password-reset-success", oldCreds.Email, nil)
+
+		// Check that the old password no longer works.
+		if st.authenticate(oldCreds) {
+			t.Fatalf("expected authentication to fail")
+		}
+
+		// Check that the new password works.
+		newCreds := auth.Credentials{
+			Email:    oldCreds.Email,
+			Password: newPass.Password,
+		}
+		if !st.authenticate(newCreds) {
+			t.Fatalf("expected authentication to succeed")
+		}
+	})
+
+	t.Run("fail, non-matching token", func(t *testing.T) {
+		st := newServiceTest(t)
+		oldCreds, aTok := st.registerUser()
+		st.activateUser(aTok)
+		resetTok := st.requestPasswordReset(oldCreds.Email)
+		st.emailer.clearEmails()
+
+		// Reset the password by providing the reset token and a new password.
+		newPass := auth.NewPassword{
+			Password: must(auth.ParsePassword("otherPassword")),
+			RawToken: resetTok,
+		}
+
+		newPass.RawToken.Token = must(krypto.ParseToken("0102030405060708091011121314151617181920212223242526272829303132"))
+
+		err := st.svc.ResetPassword(context.Background(), newPass)
+		if !errors.Is(err, errorz.ErrNotFound) {
+			t.Fatalf("expected error %v, got %v (via errors.Is)", errorz.ErrNotFound, err)
+		}
+
+		// assert no async errors were reported.
+		st.svc.Wait()
+		st.errList.assertNoError(t)
+		st.emailer.assertNoEmails(t)
+	})
+
+	t.Run("fail, non-existant token", func(t *testing.T) {
+		st := newServiceTest(t)
+		oldCreds, aTok := st.registerUser()
+		st.activateUser(aTok)
+		resetTok := st.requestPasswordReset(oldCreds.Email)
+		st.emailer.clearEmails()
+
+		// Reset the password by providing the reset token and a new password.
+		newPass := auth.NewPassword{
+			Password: must(auth.ParsePassword("otherPassword")),
+			RawToken: resetTok,
+		}
+
+		newPass.RawToken.ID = 3
+
+		err := st.svc.ResetPassword(context.Background(), newPass)
+		if !errors.Is(err, errorz.ErrNotFound) {
+			t.Fatalf("expected error %v, got %v (via errors.Is)", errorz.ErrNotFound, err)
+		}
+
+		// assert no async errors were reported.
+		st.svc.Wait()
+		st.errList.assertNoError(t)
+		st.emailer.assertNoEmails(t)
+	})
+
+	t.Run("fail, token already consumed", func(t *testing.T) {
+		st := newServiceTest(t)
+		oldCreds, aTok := st.registerUser()
+		st.activateUser(aTok)
+		resetTok := st.requestPasswordReset(oldCreds.Email)
+
+		newPassword := auth.NewPassword{
+			Password: must(auth.ParsePassword("otherPassword")),
+			RawToken: resetTok,
+		}
+		// Reset the password once.
+		st.resetPassword(newPassword)
+		st.emailer.clearEmails()
+
+		// Try resetting the password again.
+		err := st.svc.ResetPassword(context.Background(), newPassword)
+		if !errors.Is(err, errorz.ErrNotFound) {
+			t.Fatalf("expected error %v, got %v (via errors.Is)", errorz.ErrNotFound, err)
+		}
+
+		// assert no async errors were reported.
+		st.svc.Wait()
+		st.errList.assertNoError(t)
+		st.emailer.assertNoEmails(t)
+	})
+
+	t.Run("fail, other token used to reset password", func(t *testing.T) {
+		st := newServiceTest(t)
+		oldCreds, aTok := st.registerUser()
+		st.activateUser(aTok)
+		resetTok1 := st.requestPasswordReset(oldCreds.Email)
+		resetTok2 := st.requestPasswordReset(oldCreds.Email)
+
+		newPass1 := auth.NewPassword{
+			Password: must(auth.ParsePassword("otherPassword")),
+			RawToken: resetTok1,
+		}
+
+		newPass2 := auth.NewPassword{
+			Password: must(auth.ParsePassword("otherPassword")),
+			RawToken: resetTok2,
+		}
+
+		// Reset the password with the second token.
+		st.resetPassword(newPass2)
+		st.emailer.clearEmails()
+
+		// Now try with the first token.
+		err := st.svc.ResetPassword(context.Background(), newPass1)
+		if !errors.Is(err, errorz.ErrNotFound) {
+			t.Fatalf("expected error %v, got %v (via errors.Is)", errorz.ErrNotFound, err)
+		}
+
+		// assert no async errors were reported.
+		st.svc.Wait()
+		st.errList.assertNoError(t)
+		st.emailer.assertNoEmails(t)
+	})
+
+	t.Run("fail, expired token", func(t *testing.T) {
+		st := newServiceTest(t)
+		oldCreds, aTok := st.registerUser()
+		st.activateUser(aTok)
+		resetTok := st.requestPasswordReset(oldCreds.Email)
+		st.emailer.clearEmails()
+
+		// TokenExpiry is set to 1 hour.
+		// Simulate the current time being an hour ahead.
+		st.svc.NowFunc = func() time.Time {
+			return time.Now().Add(time.Hour + time.Second)
+		}
+
+		// Reset the password by providing the reset token and a new password.
+		newPass := auth.NewPassword{
+			Password: must(auth.ParsePassword("otherPassword")),
+			RawToken: resetTok,
+		}
+
+		err := st.svc.ResetPassword(context.Background(), newPass)
+		if !errors.Is(err, errorz.ErrNotFound) {
+			t.Fatalf("expected error %v, got %v (via errors.Is)", errorz.ErrNotFound, err)
+		}
+
+		// assert no async errors were reported.
+		st.svc.Wait()
+		st.errList.assertNoError(t)
+		st.emailer.assertNoEmails(t)
+	})
+
+	t.Run("fail, token for different purpose", func(t *testing.T) {
+		st := newServiceTest(t)
+		_, aTok := st.registerUser()
+		st.emailer.clearEmails()
+
+		// Try to reset the password with the activation token.
+		newPass := auth.NewPassword{
+			Password: must(auth.ParsePassword("otherPassword")),
+			RawToken: aTok,
+		}
+
+		err := st.svc.ResetPassword(context.Background(), newPass)
+		if !errors.Is(err, errorz.ErrNotFound) {
+			t.Fatalf("expected error %v, got %v (via errors.Is)", errorz.ErrNotFound, err)
+		}
+
+		// assert no async errors were reported.
+		st.svc.Wait()
+		st.errList.assertNoError(t)
+		st.emailer.assertNoEmails(t)
+	})
+
+	for _, tracker := range testerr.NewFailingDeps(testerr.Err, 7) {
+		t.Run("fail, store fails", func(t *testing.T) {
+			st := newServiceTest(t)
+			oldCreds, aTok := st.registerUser()
+			st.activateUser(aTok)
+			resetTok := st.requestPasswordReset(oldCreds.Email)
+			st.emailer.clearEmails()
+
+			st.store.tracker = &tracker
+
+			// Reset the password by providing the reset token and a new password.
+			newPass := auth.NewPassword{
+				Password: must(auth.ParsePassword("otherPassword")),
+				RawToken: resetTok,
+			}
+			err := st.svc.ResetPassword(context.Background(), newPass)
+			if !errors.Is(err, testerr.Err) {
+				t.Fatalf("expected error %v, got %v (via errors.Is)", testerr.Err, err)
+			}
+
+			// Wait for service goroutine to finish.
+			st.svc.Wait()
+			st.errList.assertNoError(t)
+			st.emailer.assertNoEmails(t)
+		})
+	}
+
+	t.Run("fail, emailer fails", func(t *testing.T) {
+		st := newServiceTest(t)
+		oldCreds, aTok := st.registerUser()
+		st.activateUser(aTok)
+		resetTok := st.requestPasswordReset(oldCreds.Email)
+		st.emailer.clearEmails()
+
+		st.emailer.testErr = testerr.Err
+
+		// Reset the password by providing the reset token and a new password.
+		newPass := auth.NewPassword{
+			Password: must(auth.ParsePassword("otherPassword")),
+			RawToken: resetTok,
+		}
+		err := st.svc.ResetPassword(context.Background(), newPass)
+		if err != nil {
+			t.Fatalf("failed to reset password: %v", err)
+		}
+
+		// Wait for service goroutine to finish.
 		st.svc.Wait()
 		st.errList.assertErrorIs(t, testerr.Err)
 	})
@@ -513,7 +780,7 @@ func newServiceTest(t *testing.T) *svcTest {
 	return test
 }
 
-func (st *svcTest) registerUser() (auth.Credentials, auth.ActivationRequest) {
+func (st *svcTest) registerUser() (auth.Credentials, auth.EmailTokenRaw) {
 	credentials := auth.Credentials{
 		Email:    must(email.ParseAddress("info@example.com")),
 		Password: must(auth.ParsePassword("reallyStrongPassword1")),
@@ -527,17 +794,17 @@ func (st *svcTest) registerUser() (auth.Credentials, auth.ActivationRequest) {
 	st.svc.Wait()
 	st.errList.assertNoError(st.t)
 
-	// Get the last email
+	// Get the raw email token.
 	index := len(st.emailer.emails) - 1
-	request, ok := st.emailer.emails[index].data.(auth.ActivationRequest)
+	raw, ok := st.emailer.emails[index].data.(auth.EmailTokenRaw)
 	if !ok {
 		st.t.Fatalf("unexpected data type: %T", st.emailer.emails[index].data)
 	}
 
-	return credentials, request
+	return credentials, raw
 }
 
-func (st *svcTest) activateUser(req auth.ActivationRequest) {
+func (st *svcTest) activateUser(req auth.EmailTokenRaw) {
 	err := st.svc.ActivateUser(context.Background(), req)
 	if err != nil {
 		st.t.Fatalf("failed to activate user: %v", err)
@@ -546,6 +813,43 @@ func (st *svcTest) activateUser(req auth.ActivationRequest) {
 	// wait for the service goroutine to finish activating.
 	st.svc.Wait()
 	st.errList.assertNoError(st.t)
+}
+
+func (st *svcTest) requestPasswordReset(email email.Address) auth.EmailTokenRaw {
+	st.svc.RequestPasswordReset(context.Background(), email)
+
+	// wait for the service goroutine to finish requesting.
+	st.svc.Wait()
+	st.errList.assertNoError(st.t)
+
+	// Get the raw email token
+	index := len(st.emailer.emails) - 1
+	raw, ok := st.emailer.emails[index].data.(auth.EmailTokenRaw)
+	if !ok {
+		st.t.Fatalf("unexpected data type: %T", st.emailer.emails[index].data)
+	}
+
+	return raw
+}
+
+func (st *svcTest) resetPassword(np auth.NewPassword) {
+	err := st.svc.ResetPassword(context.Background(), np)
+	if err != nil {
+		st.t.Fatalf("failed to reset password: %v", err)
+	}
+
+	// wait for the service goroutine to finish resetting.
+	st.svc.Wait()
+	st.errList.assertNoError(st.t)
+}
+
+func (st *svcTest) authenticate(credentials auth.Credentials) bool {
+	authenticated, err := st.svc.Authenticate(context.Background(), credentials)
+	if err != nil {
+		st.t.Fatalf("failed to authenticate: %v", err)
+	}
+
+	return authenticated
 }
 
 type errList struct {
@@ -672,7 +976,7 @@ type testEmailer struct {
 	testErr error
 }
 
-func (e *testEmailer) resetEmails() {
+func (e *testEmailer) clearEmails() {
 	e.emails = nil
 }
 
