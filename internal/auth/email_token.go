@@ -25,6 +25,6 @@ type EmailToken struct {
 type TokenPurpose string
 
 const (
-	// TokenPurposeActivate indicates a token should be used to activate an account.
+	// TokenPurposeActivate indicates a token should be used to activate an user.
 	TokenPurposeActivate TokenPurpose = "activate"
 )

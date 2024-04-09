@@ -15,14 +15,14 @@ func Test_UserStories(t *testing.T) {
 	t.Run("as an unauthenticated agent, I want to", func(t *testing.T) {
 		runAppForTest(t)
 
-		t.Run("view the account registration form", func(t *testing.T) {
+		t.Run("view the user registration form", func(t *testing.T) {
 			c := newClient(t)
 
 			body := c.MustGetBody("/register")
 
 			// Symbolic check for the form. I'm not checking the HTML too much,
 			// because I don't want every change to the front-end break these tests.
-			symbol := `id="register-account"`
+			symbol := `id="register-user"`
 			if !strings.Contains(body, symbol) {
 				t.Errorf("did not find\n%s\nin body\n%s", symbol, body)
 			}
