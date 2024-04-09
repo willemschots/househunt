@@ -37,16 +37,24 @@ func Test_Service_RegisterUser(t *testing.T) {
 		st.errList.assertNoError(t)
 
 		// Assert that an email was send to the email address.
-		if len(st.emailer.emails) != 1 || st.emailer.emails[0].recipient != credentials.Email {
-			t.Fatalf("expected 1 email to %s, got %d", credentials.Email, len(st.emailer.emails))
-		}
+		st.emailer.assertLastEmail(t, "user-activation", credentials.Email, func(t *testing.T, data any) {
+			req, ok := data.(auth.ActivationRequest)
+			if !ok {
+				t.Fatalf("unexpected data type: %T", data)
+			}
+			if req.ID == 0 {
+				t.Fatalf("expected ID to be set")
+			}
+			if len(req.Token) == 0 {
+				t.Fatalf("expected token to be set")
+			}
+		})
 	})
 
 	t.Run("ok, re-register non-activated user", func(t *testing.T) {
 		st := newServiceTest(t)
-
-		// Register an initial user, but don't activate it.
 		credentials, _ := st.registerUser()
+		st.emailer.resetEmails()
 
 		// Register again.
 		err := st.svc.RegisterUser(context.Background(), credentials)
@@ -60,18 +68,26 @@ func Test_Service_RegisterUser(t *testing.T) {
 		// Verify no errors were reported to the error handler.
 		st.errList.assertNoError(t)
 
-		// Assert two emails were send.
-		if len(st.emailer.emails) != 2 {
-			t.Fatalf("expected 2 emails, got %d", len(st.emailer.emails))
-		}
+		// Assert that an email was send to the email address again.
+		st.emailer.assertLastEmail(t, "user-activation", credentials.Email, func(t *testing.T, data any) {
+			req, ok := data.(auth.ActivationRequest)
+			if !ok {
+				t.Fatalf("unexpected data type: %T", data)
+			}
+			if req.ID == 0 {
+				t.Fatalf("expected ID to be set")
+			}
+			if len(req.Token) == 0 {
+				t.Fatalf("expected token to be set")
+			}
+		})
 	})
 
 	t.Run("fail async, re-register active user", func(t *testing.T) {
 		st := newServiceTest(t)
-
-		// Register an initial user and activate it.
 		credentials, request := st.registerUser()
 		st.activateUser(request)
+		st.emailer.resetEmails()
 
 		// Register again.
 		err := st.svc.RegisterUser(context.Background(), credentials)
@@ -83,6 +99,7 @@ func Test_Service_RegisterUser(t *testing.T) {
 
 		// Now we should have an error.
 		st.errList.assertErrorIs(t, auth.ErrDuplicateUser)
+		st.emailer.assertNoEmails(t)
 	})
 
 	// TODO: add case "fail async, too many registration requests"
@@ -104,13 +121,8 @@ func Test_Service_RegisterUser(t *testing.T) {
 
 			// Wait for service goroutine to finish registering.
 			st.svc.Wait()
-
 			st.errList.assertErrorIs(t, testerr.Err)
-
-			// Assert no email was send.
-			if len(st.emailer.emails) != 0 {
-				t.Fatalf("expected 0 emails, got %d", len(st.emailer.emails))
-			}
+			st.emailer.assertNoEmails(t)
 		})
 	}
 
@@ -130,7 +142,6 @@ func Test_Service_RegisterUser(t *testing.T) {
 
 		// Wait for service goroutine to finish registering.
 		st.svc.Wait()
-
 		st.errList.assertErrorIs(t, testerr.Err)
 	})
 }
@@ -362,6 +373,98 @@ func Test_Service_Authenticate(t *testing.T) {
 	})
 }
 
+func Test_Service_RequestPasswordReset(t *testing.T) {
+	t.Run("ok, active user", func(t *testing.T) {
+		st := newServiceTest(t)
+		credentials, req := st.registerUser()
+		st.activateUser(req)
+		st.emailer.resetEmails()
+
+		st.svc.RequestPasswordReset(context.Background(), credentials.Email)
+
+		// Wait for service goroutine to finish.
+		st.svc.Wait()
+
+		// Verify no errors were reported to the error handler.
+		st.errList.assertNoError(t)
+
+		st.emailer.assertLastEmail(t, "password-reset-request", credentials.Email, func(t *testing.T, data any) {
+			req, ok := data.(auth.ActivationRequest)
+			if !ok {
+				t.Fatalf("unexpected data type: %T", data)
+			}
+			if req.ID == 0 {
+				t.Fatalf("expected ID to be set")
+			}
+			if len(req.Token) == 0 {
+				t.Fatalf("expected token to be set")
+			}
+		})
+	})
+
+	t.Run("fail async, non-existant user", func(t *testing.T) {
+		st := newServiceTest(t)
+		_, req := st.registerUser()
+		st.activateUser(req)
+		st.emailer.resetEmails()
+
+		email := must(email.ParseAddress("jacob@example.com"))
+		st.svc.RequestPasswordReset(context.Background(), email)
+
+		// Wait for service goroutine to finish.
+		st.svc.Wait()
+		st.errList.assertErrorIs(t, errorz.ErrNotFound)
+		st.emailer.assertNoEmails(t)
+	})
+
+	t.Run("fail async, inactive user", func(t *testing.T) {
+		st := newServiceTest(t)
+		credentials, _ := st.registerUser()
+		st.emailer.resetEmails()
+
+		st.svc.RequestPasswordReset(context.Background(), credentials.Email)
+
+		// Wait for service goroutine to finish.
+		st.svc.Wait()
+		st.errList.assertErrorIs(t, errorz.ErrNotFound)
+		st.emailer.assertNoEmails(t)
+	})
+
+	// TODO: add case "fail async, too many reset password requests"
+
+	for _, tracker := range testerr.NewFailingDeps(testerr.Err, 4) {
+		t.Run("fail async, store fails", func(t *testing.T) {
+			st := newServiceTest(t)
+			credentials, req := st.registerUser()
+			st.activateUser(req)
+			st.emailer.resetEmails()
+
+			st.store.tracker = &tracker
+
+			st.svc.RequestPasswordReset(context.Background(), credentials.Email)
+
+			// Wait for service goroutine to finish registering.
+			st.svc.Wait()
+			st.errList.assertErrorIs(t, testerr.Err)
+			st.emailer.assertNoEmails(t)
+		})
+	}
+
+	t.Run("fail async, emailer fails", func(t *testing.T) {
+		st := newServiceTest(t)
+		credentials, req := st.registerUser()
+		st.activateUser(req)
+		st.emailer.resetEmails()
+		st.emailer.testErr = testerr.Err
+
+		st.svc.RequestPasswordReset(context.Background(), credentials.Email)
+
+		// Wait for service goroutine to finish registering.
+		st.svc.Wait()
+		st.errList.assertErrorIs(t, testerr.Err)
+	})
+}
+
 type svcTest struct {
 	t       *testing.T
 	svc     *auth.Service
@@ -569,6 +672,10 @@ type testEmailer struct {
 	testErr error
 }
 
+func (e *testEmailer) resetEmails() {
+	e.emails = nil
+}
+
 func (e *testEmailer) Send(_ context.Context, template string, to email.Address, data interface{}) error {
 	e.emails = append(e.emails, sendEmail{
 		template:  template,
@@ -577,4 +684,33 @@ func (e *testEmailer) Send(_ context.Context, template string, to email.Address,
 	})
 
 	return e.testErr
+}
+
+func (e *testEmailer) assertLastEmail(t *testing.T, template string, recipient email.Address, dataFunc func(t *testing.T, data any)) {
+	t.Helper()
+
+	if len(e.emails) == 0 {
+		t.Fatalf("expected an email, got none")
+	}
+
+	last := e.emails[len(e.emails)-1]
+	if last.template != template {
+		t.Fatalf("wanted last email to use template %s, got %s", template, last.template)
+	}
+
+	if last.recipient != recipient {
+		t.Fatalf("wanted last email to be to %s, got %s", recipient, last.recipient)
+	}
+
+	if dataFunc != nil {
+		dataFunc(t, last.data)
+	}
+}
+
+func (e *testEmailer) assertNoEmails(t *testing.T) {
+	t.Helper()
+
+	if len(e.emails) != 0 {
+		t.Fatalf("expected no emails, got %d", len(e.emails))
+	}
 }

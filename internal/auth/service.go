@@ -103,6 +103,7 @@ func (s *Service) RegisterUser(_ context.Context, c Credentials) error {
 		err := s.startActivation(wCtx, c.Email, pwdHash)
 		if err != nil {
 			s.errHandler(err)
+			return
 		}
 	}()
 
@@ -309,11 +310,92 @@ func (s *Service) Authenticate(ctx context.Context, c Credentials) (bool, error)
 // RequestPasswordReset requests a password reset for the user with the provided email address.
 // Similary to RegisterUser, the main work is done in a separate goroutine and no output is
 // returned to indicate if the request was successful.
-func (s *Service) RequestPasswordReset(ctx context.Context, addr email.Address) error {
+func (s *Service) RequestPasswordReset(ctx context.Context, addr email.Address) {
 	// The actual work is done in a separate goroutine to prevent:
 	// - Waiting for the email to be send might slow down sending a response.
 	// - Information leakage. Timing difference between existing/non-existing
 	//   user could lead to user enumeration attacks.
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+
+		wCtx, cancel := context.WithTimeout(context.Background(), s.cfg.WorkerTimeout)
+		defer cancel()
+
+		err := s.startPasswordReset(wCtx, addr)
+		if err != nil {
+			s.errHandler(err)
+			return
+		}
+	}()
+}
+
+func (s *Service) startPasswordReset(ctx context.Context, addr email.Address) error {
+	now := s.NowFunc()
+
+	token, err := krypto.GenerateToken()
+	if err != nil {
+		return err
+	}
+
+	tokenHash, err := krypto.HashArgon2(token[:])
+	if err != nil {
+		return err
+	}
+
+	emailToken := EmailToken{
+		TokenHash:  tokenHash,
+		UserID:     0, // set after the user was found.
+		Email:      addr,
+		Purpose:    TokenPurposePasswordReset,
+		CreatedAt:  now,
+		ConsumedAt: nil,
+	}
+
+	err = s.inTx(ctx, func(tx Tx) error {
+		// Find the user with the provided email address.
+		users, txErr := tx.FindUsers(&UserFilter{
+			Emails:   []email.Address{addr},
+			IsActive: ptr(true),
+		})
+
+		if txErr != nil {
+			return txErr
+		}
+
+		if len(users) != 1 {
+			return errorz.ErrNotFound
+		}
+
+		user := users[0]
+
+		// Create the new password reset token.
+		emailToken.UserID = user.ID
+
+		txErr = tx.CreateEmailToken(&emailToken)
+		if txErr != nil {
+			return txErr
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return err
+	}
+
+	// Send the email.
+	// This could fail independently of the transaction. This is an acceptable
+	// risk for now. If the user has not received the email, they can always try to request a new password again.
+	//
+	// If at some point this becomes unacceptable, we need to consider some kind of outbox pattern.
+	err = s.emailer.Send(ctx, "password-reset-request", addr, ActivationRequest{
+		ID:    emailToken.ID,
+		Token: token,
+	})
+	if err != nil {
+		return err
+	}
 
 	return nil
 }

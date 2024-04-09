@@ -27,4 +27,6 @@ type TokenPurpose string
 const (
 	// TokenPurposeActivate indicates a token should be used to activate an user.
 	TokenPurposeActivate TokenPurpose = "activate"
+	// TokenPurposePasswordReset indicates a token should be used to reset a password.
+	TokenPurposePasswordReset TokenPurpose = "password_reset"
 )
