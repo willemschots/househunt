@@ -16,8 +16,8 @@ import (
 	"github.com/willemschots/househunt/internal/krypto"
 )
 
-func Test_Service_RegisterAccount(t *testing.T) {
-	t.Run("ok, register account", func(t *testing.T) {
+func Test_Service_RegisterUser(t *testing.T) {
+	t.Run("ok, register user", func(t *testing.T) {
 		svc, deps := setupService(t)
 
 		credentials := auth.Credentials{
@@ -25,9 +25,9 @@ func Test_Service_RegisterAccount(t *testing.T) {
 			Password: must(auth.ParsePassword("reallyStrongPassword1")),
 		}
 
-		err := svc.RegisterAccount(context.Background(), credentials)
+		err := svc.RegisterUser(context.Background(), credentials)
 		if err != nil {
-			t.Fatalf("failed to register account: %v", err)
+			t.Fatalf("failed to register user: %v", err)
 		}
 
 		// Wait for service goroutine to finish registering.
@@ -42,7 +42,7 @@ func Test_Service_RegisterAccount(t *testing.T) {
 		}
 	})
 
-	t.Run("ok, re-register non-activated account", func(t *testing.T) {
+	t.Run("ok, re-register non-activated user", func(t *testing.T) {
 		svc, deps := setupService(t)
 
 		credentials := auth.Credentials{
@@ -51,18 +51,18 @@ func Test_Service_RegisterAccount(t *testing.T) {
 		}
 
 		// Register once.
-		err := svc.RegisterAccount(context.Background(), credentials)
+		err := svc.RegisterUser(context.Background(), credentials)
 		if err != nil {
-			t.Fatalf("failed to register account: %v", err)
+			t.Fatalf("failed to register user: %v", err)
 		}
 
 		// Wait for service goroutine to finish.
 		svc.Wait()
 
 		// Register again.
-		err = svc.RegisterAccount(context.Background(), credentials)
+		err = svc.RegisterUser(context.Background(), credentials)
 		if err != nil {
-			t.Fatalf("failed to register account: %v", err)
+			t.Fatalf("failed to register user: %v", err)
 		}
 
 		// Wait for service goroutine to finish registering.
@@ -77,7 +77,7 @@ func Test_Service_RegisterAccount(t *testing.T) {
 		}
 	})
 
-	t.Run("fail async, re-register active account", func(t *testing.T) {
+	t.Run("fail async, re-register active user", func(t *testing.T) {
 		svc, deps := setupService(t)
 
 		credentials := auth.Credentials{
@@ -86,15 +86,15 @@ func Test_Service_RegisterAccount(t *testing.T) {
 		}
 
 		// Register once.
-		err := svc.RegisterAccount(context.Background(), credentials)
+		err := svc.RegisterUser(context.Background(), credentials)
 		if err != nil {
-			t.Fatalf("failed to register account: %v", err)
+			t.Fatalf("failed to register user: %v", err)
 		}
 
 		// Wait for service goroutine to finish registering.
 		svc.Wait()
 
-		// Activate the account.
+		// Activate the user.
 		if len(deps.emailer.emails) != 1 {
 			t.Fatalf("expected 1 email, got %d", len(deps.emailer.emails))
 		}
@@ -104,16 +104,16 @@ func Test_Service_RegisterAccount(t *testing.T) {
 			t.Fatalf("unexpected data type: %T", deps.emailer.emails[0].data)
 		}
 
-		err = svc.ActivateAccount(context.Background(), request)
+		err = svc.ActivateUser(context.Background(), request)
 		if err != nil {
-			t.Fatalf("failed to activate account: %v", err)
+			t.Fatalf("failed to activate user: %v", err)
 		}
 
 		// Wait for service goroutine to finish activating.
 		svc.Wait()
 
 		// Register again.
-		err = svc.RegisterAccount(context.Background(), credentials)
+		err = svc.RegisterUser(context.Background(), credentials)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -121,7 +121,7 @@ func Test_Service_RegisterAccount(t *testing.T) {
 		svc.Wait()
 
 		// Now we should have an error.
-		deps.errList.assertErrorIs(t, auth.ErrDuplicateAccount)
+		deps.errList.assertErrorIs(t, auth.ErrDuplicateUser)
 	})
 
 	// TODO: add case "fail async, too many registration requests"
@@ -136,9 +136,9 @@ func Test_Service_RegisterAccount(t *testing.T) {
 				Password: must(auth.ParsePassword("reallyStrongPassword1")),
 			}
 
-			err := svc.RegisterAccount(context.Background(), credentials)
+			err := svc.RegisterUser(context.Background(), credentials)
 			if err != nil {
-				t.Fatalf("failed to register account: %v", err)
+				t.Fatalf("failed to register user: %v", err)
 			}
 
 			// Wait for service goroutine to finish registering.
@@ -162,9 +162,9 @@ func Test_Service_RegisterAccount(t *testing.T) {
 			Password: must(auth.ParsePassword("reallyStrongPassword1")),
 		}
 
-		err := svc.RegisterAccount(context.Background(), credentials)
+		err := svc.RegisterUser(context.Background(), credentials)
 		if err != nil {
-			t.Fatalf("failed to register account: %v", err)
+			t.Fatalf("failed to register user: %v", err)
 		}
 
 		// Wait for service goroutine to finish registering.
@@ -174,14 +174,14 @@ func Test_Service_RegisterAccount(t *testing.T) {
 	})
 }
 
-func Test_Service_ActivateAccount(t *testing.T) {
+func Test_Service_ActivateUser(t *testing.T) {
 	registerAndGetRequest := func(t *testing.T, svc *auth.Service, deps *svcDeps) auth.ActivationRequest {
-		err := svc.RegisterAccount(context.Background(), auth.Credentials{
+		err := svc.RegisterUser(context.Background(), auth.Credentials{
 			Email:    must(email.ParseAddress("info@example.com")),
 			Password: must(auth.ParsePassword("reallyStrongPassword1")),
 		})
 		if err != nil {
-			t.Fatalf("failed to register account: %v", err)
+			t.Fatalf("failed to register user: %v", err)
 		}
 
 		// wait for the service goroutine to finish registering.
@@ -197,7 +197,7 @@ func Test_Service_ActivateAccount(t *testing.T) {
 		return request
 	}
 
-	// setup the test by registering an account and getting the activation request.
+	// setup the test by registering an user and getting the activation request.
 	setup := func(t *testing.T) (*auth.Service, *svcDeps, auth.ActivationRequest) {
 		svc, deps := setupService(t)
 
@@ -206,12 +206,12 @@ func Test_Service_ActivateAccount(t *testing.T) {
 		return svc, deps, request
 	}
 
-	t.Run("ok, activate non-activated account", func(t *testing.T) {
+	t.Run("ok, activate non-activated user", func(t *testing.T) {
 		svc, deps, req := setup(t)
 
-		err := svc.ActivateAccount(context.Background(), req)
+		err := svc.ActivateUser(context.Background(), req)
 		if err != nil {
-			t.Fatalf("failed to activate account: %v", err)
+			t.Fatalf("failed to activate user: %v", err)
 		}
 
 		// assert no async errors were reported.
@@ -224,7 +224,7 @@ func Test_Service_ActivateAccount(t *testing.T) {
 
 		req.Token = must(krypto.ParseToken("0102030405060708091011121314151617181920212223242526272829303132"))
 
-		err := svc.ActivateAccount(context.Background(), req)
+		err := svc.ActivateUser(context.Background(), req)
 		if !errors.Is(err, errorz.ErrNotFound) {
 			t.Fatalf("expected error %v, got %v", errorz.ErrNotFound, err)
 		}
@@ -234,12 +234,12 @@ func Test_Service_ActivateAccount(t *testing.T) {
 		deps.errList.assertNoError(t)
 	})
 
-	t.Run("fail, non-existent token", func(t *testing.T) {
+	t.Run("fail, non-existant token", func(t *testing.T) {
 		svc, deps, req := setup(t)
 
 		req.ID = 2
 
-		err := svc.ActivateAccount(context.Background(), req)
+		err := svc.ActivateUser(context.Background(), req)
 		if !errors.Is(err, errorz.ErrNotFound) {
 			t.Fatalf("expected error %v, got %v", errorz.ErrNotFound, err)
 		}
@@ -252,14 +252,14 @@ func Test_Service_ActivateAccount(t *testing.T) {
 	t.Run("fail, token already consumed", func(t *testing.T) {
 		svc, deps, req := setup(t)
 
-		err := svc.ActivateAccount(context.Background(), req)
+		err := svc.ActivateUser(context.Background(), req)
 		if err != nil {
-			t.Fatalf("failed to activate account: %v", err)
+			t.Fatalf("failed to activate user: %v", err)
 		}
 		// wait for the service goroutine to finish activating.
 		svc.Wait()
 
-		err = svc.ActivateAccount(context.Background(), req)
+		err = svc.ActivateUser(context.Background(), req)
 		if !errors.Is(err, errorz.ErrNotFound) {
 			t.Fatalf("expected error %v, got %v", errorz.ErrNotFound, err)
 		}
@@ -269,21 +269,21 @@ func Test_Service_ActivateAccount(t *testing.T) {
 		deps.errList.assertNoError(t)
 	})
 
-	t.Run("fail, other token used to activate account", func(t *testing.T) {
+	t.Run("fail, other token used to activate user", func(t *testing.T) {
 		svc, deps, req1 := setup(t)
 
 		req2 := registerAndGetRequest(t, svc, deps)
 
-		err := svc.ActivateAccount(context.Background(), req2)
+		err := svc.ActivateUser(context.Background(), req2)
 		if err != nil {
-			t.Fatalf("failed to activate account: %v", err)
+			t.Fatalf("failed to activate user: %v", err)
 		}
 
 		// wait for the service goroutine to finish activating.
 		svc.Wait()
 
 		// now try with the first token.
-		err = svc.ActivateAccount(context.Background(), req1)
+		err = svc.ActivateUser(context.Background(), req1)
 		if !errors.Is(err, errorz.ErrNotFound) {
 			t.Fatalf("expected error %v, got %v", errorz.ErrNotFound, err)
 		}
@@ -302,7 +302,7 @@ func Test_Service_ActivateAccount(t *testing.T) {
 			return time.Now().Add(time.Hour + time.Second)
 		}
 
-		err := svc.ActivateAccount(context.Background(), req)
+		err := svc.ActivateUser(context.Background(), req)
 		if !errors.Is(err, errorz.ErrNotFound) {
 			t.Fatalf("expected error %v, got %v", errorz.ErrNotFound, err)
 		}
@@ -321,7 +321,7 @@ func Test_Service_ActivateAccount(t *testing.T) {
 			svc, deps, req := setup(t)
 			deps.store.tracker = &tracker
 
-			err := svc.ActivateAccount(context.Background(), req)
+			err := svc.ActivateUser(context.Background(), req)
 			if !errors.Is(err, testerr.Err) {
 				t.Fatalf("expected error %v, got %v (via errors.Is)", testerr.Err, err)
 			}
@@ -342,9 +342,9 @@ func Test_Service_Authenticate(t *testing.T) {
 			Password: must(auth.ParsePassword("reallyStrongPassword1")),
 		}
 
-		err := svc.RegisterAccount(context.Background(), credentials)
+		err := svc.RegisterUser(context.Background(), credentials)
 		if err != nil {
-			t.Fatalf("failed to register account: %v", err)
+			t.Fatalf("failed to register user: %v", err)
 		}
 
 		svc.Wait()
@@ -357,9 +357,9 @@ func Test_Service_Authenticate(t *testing.T) {
 				t.Fatalf("unexpected data type: %T", deps.emailer.emails[index].data)
 			}
 
-			err = svc.ActivateAccount(context.Background(), request)
+			err = svc.ActivateUser(context.Background(), request)
 			if err != nil {
-				t.Fatalf("failed to activate account: %v", err)
+				t.Fatalf("failed to activate user: %v", err)
 			}
 		}
 
@@ -402,7 +402,7 @@ func Test_Service_Authenticate(t *testing.T) {
 		deps.errList.assertNoError(t)
 	})
 
-	t.Run("ok, failed to authenticate, non-existant account", func(t *testing.T) {
+	t.Run("ok, failed to authenticate, non-existant user", func(t *testing.T) {
 		svc, deps, credentials := setup(t, true)
 
 		credentials.Email = must(email.ParseAddress("jacob@example.com"))
@@ -421,7 +421,7 @@ func Test_Service_Authenticate(t *testing.T) {
 		deps.errList.assertNoError(t)
 	})
 
-	t.Run("ok, failed to authenticate, account not activated", func(t *testing.T) {
+	t.Run("ok, failed to authenticate, inactive user", func(t *testing.T) {
 		svc, deps, credentials := setup(t, false)
 
 		authenticated, err := svc.Authenticate(context.Background(), credentials)

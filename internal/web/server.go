@@ -25,7 +25,7 @@ func NewServer(logger *slog.Logger, viewRenderer ViewRenderer) http.Handler {
 	mux.Handle("GET /register", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		logger.Info("register page requested")
 		w.WriteHeader(http.StatusOK)
-		err := viewRenderer.Render(w, "register-account", nil)
+		err := viewRenderer.Render(w, "register-user", nil)
 		if err != nil {
 			logger.Error("error rendering view", "error", err)
 		}

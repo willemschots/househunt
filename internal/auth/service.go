@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	ErrDuplicateAccount = errors.New("duplicate account")
+	ErrDuplicateUser = errors.New("duplicate user")
 )
 
 // Emailer is used to send templated emails.
@@ -78,11 +78,11 @@ func (s *Service) Wait() {
 	s.wg.Wait()
 }
 
-// RegisterAccount registers a new account for the provided credentials.
-// The main work of this method is done in a separate goroutine, the returned
-// error does not indicate whether an account was created or not. This is by
-// design to prevent information leakage.
-func (s *Service) RegisterAccount(_ context.Context, c Credentials) error {
+// RegisterUser registers a new user with the provided credentials.
+// The main work of this method is done in a separate goroutine. The returned
+// error does not indicate whether a user was actually registered or not. This
+// is by design to prevent information leakage.
+func (s *Service) RegisterUser(_ context.Context, c Credentials) error {
 	// Hash the password.
 	pwdHash, err := c.Password.Hash()
 	if err != nil {
@@ -92,7 +92,7 @@ func (s *Service) RegisterAccount(_ context.Context, c Credentials) error {
 	// The actual work is done in a separate goroutine to prevent:
 	// - Waiting for the email to be send might slow down sending a response.
 	// - Information leakage. Timing difference between existing/non-existing
-	//   accounts could lead to account enumeration attacks.
+	//   user could lead to user enumeration attacks.
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
@@ -106,17 +106,17 @@ func (s *Service) RegisterAccount(_ context.Context, c Credentials) error {
 		}
 	}()
 
-	// Note that we don't let the caller know if the account was created or not.
+	// Note that we don't let the caller know if the user was created or not.
 	// This is by design, again to prevent information leakage.
 	return nil
 }
 
-// startActivation begins the activation process of a new account:
-// - Create a new user if necessary.
+// startActivation begins the activation process for a new user:
+// - Create a new auth.User if necessary.
 // - Create a new email token.
-// - Send an email to address with an activation link.
+// - Send an email to the email address with an activation link.
 //
-// If an active user with the same email address exists, ErrDuplicateAccount is returned.
+// If an active user with the same email address exists, ErrDuplicateUser is returned.
 func (s *Service) startActivation(ctx context.Context, addr email.Address, pwdHash krypto.Argon2Hash) error {
 	now := s.NowFunc()
 
@@ -162,7 +162,7 @@ func (s *Service) startActivation(ctx context.Context, addr email.Address, pwdHa
 		// otherwise create a new user.
 		if len(users) > 0 {
 			if users[0].IsActive {
-				return ErrDuplicateAccount
+				return ErrDuplicateUser
 			}
 
 			emailToken.UserID = users[0].ID
@@ -193,7 +193,7 @@ func (s *Service) startActivation(ctx context.Context, addr email.Address, pwdHa
 	// risk for now. If the user has not received the email, they can always try to register again.
 	//
 	// If at some point this becomes unacceptable, we need to consider some kind of outbox pattern.
-	err = s.emailer.Send(ctx, "account-activation", user.Email, ActivationRequest{
+	err = s.emailer.Send(ctx, "user-activation", user.Email, ActivationRequest{
 		ID:    emailToken.ID,
 		Token: token,
 	})
@@ -204,14 +204,14 @@ func (s *Service) startActivation(ctx context.Context, addr email.Address, pwdHa
 	return nil
 }
 
-// ActivationRequest is a request to activate an account.
+// ActivationRequest is a request to activate an user.
 type ActivationRequest struct {
 	ID    int
 	Token krypto.Token
 }
 
-// ActivateAccount attempts to activate the requested account.
-func (s *Service) ActivateAccount(ctx context.Context, req ActivationRequest) error {
+// ActivateUser attempts to activate the user identified by the activation request.
+func (s *Service) ActivateUser(ctx context.Context, req ActivationRequest) error {
 	// finish the activation:
 	// - Find the token.
 	// - Check if the token is still valid.
@@ -244,7 +244,7 @@ func (s *Service) ActivateAccount(ctx context.Context, req ActivationRequest) er
 			return errorz.ErrNotFound
 		}
 
-		// Activate the corresponding user account.
+		// Activate the corresponding user.
 		users, err := tx.FindUsers(&UserFilter{
 			IDs:      []int{token.UserID},
 			IsActive: ptr(false),
@@ -297,7 +297,8 @@ func (s *Service) Authenticate(ctx context.Context, c Credentials) (bool, error)
 	}
 
 	if len(users) != 1 {
-		// Still compare to a hash to prevent timing attacks.
+		// Even if no user is found we compare to a hash to prevent timing differences
+		// that could result in user enumeration attacks.
 		_ = c.Password.Match(s.comparisonHash)
 		return false, nil
 	}
