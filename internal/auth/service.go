@@ -306,6 +306,18 @@ func (s *Service) Authenticate(ctx context.Context, c Credentials) (bool, error)
 	return c.Password.Match(users[0].PasswordHash), nil
 }
 
+// RequestPasswordReset requests a password reset for the user with the provided email address.
+// Similary to RegisterUser, the main work is done in a separate goroutine and no output is
+// returned to indicate if the request was successful.
+func (s *Service) RequestPasswordReset(ctx context.Context, addr email.Address) error {
+	// The actual work is done in a separate goroutine to prevent:
+	// - Waiting for the email to be send might slow down sending a response.
+	// - Information leakage. Timing difference between existing/non-existing
+	//   user could lead to user enumeration attacks.
+
+	return nil
+}
+
 func (s *Service) inTx(ctx context.Context, f func(tx Tx) error) error {
 	tx, err := s.store.BeginTx(ctx)
 	if err != nil {
