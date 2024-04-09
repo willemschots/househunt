@@ -23,7 +23,9 @@ type Emailer interface {
 // ErrFunc is a function that handles errors.
 type ErrFunc func(error)
 
-// ServiceConfig is the configuration for the Service.
+// ServiceConfig is the configuration for the Service. Some methods run in seperate goroutines,
+// it is up to the caller to wait for these methods to finish. This can be done by calling the
+// Wait method.
 type ServiceConfig struct {
 	// WorkerTimeout is the max duration worker goroutines are allowed
 	// to take befor they are cancelled.
@@ -49,6 +51,7 @@ type Service struct {
 	NowFunc func() time.Time
 }
 
+// NewService creates a new Service.
 func NewService(s Store, emailer Emailer, errHandler ErrFunc, cfg ServiceConfig) (*Service, error) {
 	tok, err := krypto.GenerateToken()
 	if err != nil {
@@ -103,6 +106,7 @@ func (s *Service) RegisterUser(_ context.Context, c Credentials) error {
 		err := s.startActivation(wCtx, c.Email, pwdHash)
 		if err != nil {
 			s.errHandler(err)
+			return
 		}
 	}()
 
@@ -120,14 +124,6 @@ func (s *Service) RegisterUser(_ context.Context, c Credentials) error {
 func (s *Service) startActivation(ctx context.Context, addr email.Address, pwdHash krypto.Argon2Hash) error {
 	now := s.NowFunc()
 
-	user := User{
-		Email:        addr,
-		PasswordHash: pwdHash,
-		IsActive:     false,
-		CreatedAt:    now,
-		UpdatedAt:    now,
-	}
-
 	token, err := krypto.GenerateToken()
 	if err != nil {
 		return err
@@ -141,7 +137,7 @@ func (s *Service) startActivation(ctx context.Context, addr email.Address, pwdHa
 	emailToken := EmailToken{
 		TokenHash:  tokenHash,
 		UserID:     0, // set after inserting the user.
-		Email:      user.Email,
+		Email:      addr,
 		Purpose:    TokenPurposeActivate,
 		CreatedAt:  now,
 		ConsumedAt: nil,
@@ -152,27 +148,35 @@ func (s *Service) startActivation(ctx context.Context, addr email.Address, pwdHa
 
 		// Find user user with the same email.
 		users, txErr := tx.FindUsers(&UserFilter{
-			Emails: []email.Address{user.Email},
+			Emails: []email.Address{addr},
 		})
 		if txErr != nil {
 			return txErr
 		}
 
-		// Check if we already have an inactive user with the same email,
-		// otherwise create a new user.
-		if len(users) > 0 {
-			if users[0].IsActive {
-				return ErrDuplicateUser
+		if len(users) == 0 {
+			// No user with the this email found, create a new user.
+			user := User{
+				Email:        addr,
+				PasswordHash: pwdHash,
+				IsActive:     false,
+				CreatedAt:    now,
+				UpdatedAt:    now,
 			}
-
-			emailToken.UserID = users[0].ID
-		} else {
 			txErr = tx.CreateUser(&user)
 			if txErr != nil {
 				return txErr
 			}
 
 			emailToken.UserID = user.ID
+		} else {
+			// Check if we already have an inactive user with the same email,
+			if users[0].IsActive {
+				return ErrDuplicateUser
+			}
+
+			// Re-use the existing user for this email token.
+			emailToken.UserID = users[0].ID
 		}
 
 		// Create the activation token.
@@ -193,7 +197,7 @@ func (s *Service) startActivation(ctx context.Context, addr email.Address, pwdHa
 	// risk for now. If the user has not received the email, they can always try to register again.
 	//
 	// If at some point this becomes unacceptable, we need to consider some kind of outbox pattern.
-	err = s.emailer.Send(ctx, "user-activation", user.Email, ActivationRequest{
+	err = s.emailer.Send(ctx, "user-activation", addr, EmailTokenRaw{
 		ID:    emailToken.ID,
 		Token: token,
 	})
@@ -204,48 +208,19 @@ func (s *Service) startActivation(ctx context.Context, addr email.Address, pwdHa
 	return nil
 }
 
-// ActivationRequest is a request to activate an user.
-type ActivationRequest struct {
-	ID    int
-	Token krypto.Token
-}
+// ActivateUser attempts to activate the user for the provided token.
+func (s *Service) ActivateUser(ctx context.Context, req EmailTokenRaw) error {
+	now := s.NowFunc()
 
-// ActivateUser attempts to activate the user identified by the activation request.
-func (s *Service) ActivateUser(ctx context.Context, req ActivationRequest) error {
-	// finish the activation:
-	// - Find the token.
-	// - Check if the token is still valid.
-	// - Activate the user.
-	// - Consume all unconsumed activation tokens for the user.
 	return s.inTx(ctx, func(tx Tx) error {
 		// Find an unconsumed activation token with the provided ID.
-		tokens, err := tx.FindEmailTokens(&EmailTokenFilter{
-			IDs:        []int{req.ID},
-			Purposes:   []TokenPurpose{TokenPurposeActivate},
-			IsConsumed: ptr(false),
-		})
+		token, err := findConsumableEmailToken(tx, req, TokenPurposeActivate, now, s.cfg.TokenExpiry)
 		if err != nil {
 			return err
 		}
 
-		if len(tokens) != 1 {
-			return errorz.ErrNotFound
-		}
-
-		token := tokens[0]
-		now := s.NowFunc()
-
-		if now.Sub(token.CreatedAt) > s.cfg.TokenExpiry {
-			return errorz.ErrNotFound
-		}
-
-		// Check if the provided token matches the stored hash.
-		if !token.TokenHash.MatchBytes(req.Token[:]) {
-			return errorz.ErrNotFound
-		}
-
 		// Activate the corresponding user.
-		users, err := tx.FindUsers(&UserFilter{
+		user, err := findUser(tx, &UserFilter{
 			IDs:      []int{token.UserID},
 			IsActive: ptr(false),
 		})
@@ -253,36 +228,16 @@ func (s *Service) ActivateUser(ctx context.Context, req ActivationRequest) error
 			return err
 		}
 
-		if len(users) != 1 {
-			return errorz.ErrNotFound
-		}
+		user.IsActive = true
+		user.UpdatedAt = now
 
-		users[0].IsActive = true
-		users[0].UpdatedAt = now
-
-		err = tx.UpdateUser(&users[0])
+		err = tx.UpdateUser(&user)
 		if err != nil {
 			return err
 		}
 
-		// Consume all unconsumed activation tokens for the user.
-		tokens, err = tx.FindEmailTokens(&EmailTokenFilter{
-			UserIDs:  []int{token.UserID},
-			Purposes: []TokenPurpose{TokenPurposeActivate},
-		})
-		if err != nil {
-			return err
-		}
-
-		for _, t := range tokens {
-			t.ConsumedAt = ptr(now)
-			err = tx.UpdateEmailToken(&t)
-			if err != nil {
-				return err
-			}
-		}
-
-		return nil
+		// Consume all unconsumed activation tokens for this user.
+		return consumeAllTokensForUserID(tx, token.UserID, TokenPurposeActivate, now)
 	})
 }
 
@@ -304,6 +259,226 @@ func (s *Service) Authenticate(ctx context.Context, c Credentials) (bool, error)
 	}
 
 	return c.Password.Match(users[0].PasswordHash), nil
+}
+
+// RequestPasswordReset requests a password reset for the user with the provided email address.
+// Similary to RegisterUser, the main work is done in a separate goroutine and no output is
+// returned to indicate if the request was successful.
+func (s *Service) RequestPasswordReset(ctx context.Context, addr email.Address) {
+	// The actual work is done in a separate goroutine to prevent:
+	// - Waiting for the email to be send might slow down sending a response.
+	// - Information leakage. Timing difference between existing/non-existing
+	//   user could lead to user enumeration attacks.
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+
+		wCtx, cancel := context.WithTimeout(context.Background(), s.cfg.WorkerTimeout)
+		defer cancel()
+
+		err := s.startPasswordReset(wCtx, addr)
+		if err != nil {
+			s.errHandler(err)
+			return
+		}
+	}()
+}
+
+func (s *Service) startPasswordReset(ctx context.Context, addr email.Address) error {
+	now := s.NowFunc()
+
+	token, err := krypto.GenerateToken()
+	if err != nil {
+		return err
+	}
+
+	tokenHash, err := krypto.HashArgon2(token[:])
+	if err != nil {
+		return err
+	}
+
+	emailToken := EmailToken{
+		TokenHash:  tokenHash,
+		UserID:     0, // set after the user is found.
+		Email:      addr,
+		Purpose:    TokenPurposePasswordReset,
+		CreatedAt:  now,
+		ConsumedAt: nil,
+	}
+
+	err = s.inTx(ctx, func(tx Tx) error {
+		// Find the user with the provided email address.
+		user, txErr := findUser(tx, &UserFilter{
+			Emails:   []email.Address{addr},
+			IsActive: ptr(true),
+		})
+		if txErr != nil {
+			return txErr
+		}
+
+		// Create the new password reset token.
+		emailToken.UserID = user.ID
+
+		txErr = tx.CreateEmailToken(&emailToken)
+		if txErr != nil {
+			return txErr
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return err
+	}
+
+	// Send the email.
+	// This could fail independently of the transaction. This is an acceptable
+	// risk for now. If the user has not received the email, they can always try to request a new password again.
+	//
+	// If at some point this becomes unacceptable, we need to consider some kind of outbox pattern.
+	err = s.emailer.Send(ctx, "password-reset-request", addr, EmailTokenRaw{
+		ID:    emailToken.ID,
+		Token: token,
+	})
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// NewPassword contains the data required to reset a password.
+type NewPassword struct {
+	RawToken EmailTokenRaw
+	Password Password
+}
+
+func (s *Service) ResetPassword(ctx context.Context, np NewPassword) error {
+	now := s.NowFunc()
+
+	// Hash the password.
+	pwdHash, err := np.Password.Hash()
+	if err != nil {
+		return err
+	}
+
+	var recipient email.Address
+
+	// finish the password reset:
+	// - Find the token.
+	// - Check if the token is still valid.
+	// - Replace the password on the user.
+	// - Consume all unconsumed activation tokens for the user.
+	err = s.inTx(ctx, func(tx Tx) error {
+		token, txErr := findConsumableEmailToken(tx, np.RawToken, TokenPurposePasswordReset, now, s.cfg.TokenExpiry)
+		if txErr != nil {
+			return txErr
+		}
+
+		user, txErr := findUser(tx, &UserFilter{
+			IDs:      []int{token.UserID},
+			IsActive: ptr(true),
+		})
+		if txErr != nil {
+			return txErr
+		}
+
+		// Update the user with the new password.
+		user.PasswordHash = pwdHash
+		user.UpdatedAt = now
+
+		// We will send a confirmation email to the user after the transaction is done.
+		recipient = user.Email
+
+		txErr = tx.UpdateUser(&user)
+		if txErr != nil {
+			return txErr
+		}
+
+		// Consume all unconsumed password reset tokens for this user.
+		return consumeAllTokensForUserID(tx, token.UserID, TokenPurposePasswordReset, now)
+	})
+	if err != nil {
+		return err
+	}
+
+	// Send the confirmation email asynchronously.
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+
+		emailCtx, cancel := context.WithTimeout(context.Background(), s.cfg.WorkerTimeout)
+		defer cancel()
+		err = s.emailer.Send(emailCtx, "password-reset-success", recipient, nil)
+		if err != nil {
+			s.errHandler(err)
+			return
+		}
+	}()
+
+	return nil
+}
+
+func findConsumableEmailToken(tx Tx, raw EmailTokenRaw, purpose TokenPurpose, now time.Time, maxAge time.Duration) (EmailToken, error) {
+	tokens, err := tx.FindEmailTokens(&EmailTokenFilter{
+		IDs:        []int{raw.ID},
+		Purposes:   []TokenPurpose{purpose},
+		IsConsumed: ptr(false),
+	})
+	if err != nil {
+		return EmailToken{}, err
+	}
+
+	if len(tokens) != 1 {
+		return EmailToken{}, errorz.ErrNotFound
+	}
+
+	token := tokens[0]
+
+	if now.Sub(token.CreatedAt) > maxAge {
+		return EmailToken{}, errorz.ErrNotFound
+	}
+
+	// Check if the provided token matches the stored hash.
+	if !token.TokenHash.MatchBytes(raw.Token[:]) {
+		return EmailToken{}, errorz.ErrNotFound
+	}
+
+	return token, nil
+}
+
+func findUser(tx Tx, filter *UserFilter) (User, error) {
+	users, err := tx.FindUsers(filter)
+	if err != nil {
+		return User{}, err
+	}
+
+	if len(users) != 1 {
+		return User{}, errorz.ErrNotFound
+	}
+
+	return users[0], nil
+}
+
+func consumeAllTokensForUserID(tx Tx, userID int, purpose TokenPurpose, consumedAt time.Time) error {
+	tokens, err := tx.FindEmailTokens(&EmailTokenFilter{
+		UserIDs:  []int{userID},
+		Purposes: []TokenPurpose{purpose},
+		//IsConsumed: ptr(false),
+	})
+	if err != nil {
+		return err
+	}
+
+	for _, t := range tokens {
+		t.ConsumedAt = ptr(consumedAt)
+		err = tx.UpdateEmailToken(&t)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (s *Service) inTx(ctx context.Context, f func(tx Tx) error) error {
