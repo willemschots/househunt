@@ -79,7 +79,7 @@ func (s *Service) Wait() {
 }
 
 // RegisterAccount registers a new account for the provided credentials.
-// The main work of this method is done in a separate goroutine, the returned
+// The main work of this method is done in a separate goroutine. The returned
 // error does not indicate whether an account was created or not. This is by
 // design to prevent information leakage.
 func (s *Service) RegisterAccount(_ context.Context, c Credentials) error {
@@ -297,7 +297,8 @@ func (s *Service) Authenticate(ctx context.Context, c Credentials) (bool, error)
 	}
 
 	if len(users) != 1 {
-		// Still compare to a hash to prevent timing attacks.
+		// Even if no user is found we compare to a hash to prevent timing differences
+		// that could result in account enumeration attacks.
 		_ = c.Password.Match(s.comparisonHash)
 		return false, nil
 	}
