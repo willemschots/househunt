@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/willemschots/househunt/internal/auth"
 	"github.com/willemschots/househunt/internal/auth/db"
 	"github.com/willemschots/househunt/internal/db/testdb"
@@ -42,7 +43,7 @@ func Test_Service_RegisterUser(t *testing.T) {
 			if !ok {
 				t.Fatalf("unexpected data type: %T", data)
 			}
-			if req.ID == 0 {
+			if req.ID == uuid.Nil {
 				t.Fatalf("expected ID to be set")
 			}
 			if len(req.Token) == 0 {
@@ -74,7 +75,7 @@ func Test_Service_RegisterUser(t *testing.T) {
 			if !ok {
 				t.Fatalf("unexpected data type: %T", data)
 			}
-			if req.ID == 0 {
+			if req.ID == uuid.Nil {
 				t.Fatalf("expected ID to be set")
 			}
 			if len(req.Token) == 0 {
@@ -181,7 +182,7 @@ func Test_Service_ActivateUser(t *testing.T) {
 		st := newServiceTest(t)
 		_, tok := st.registerUser()
 
-		tok.ID = 2
+		tok.ID = uuid.New()
 
 		err := st.svc.ActivateUser(context.Background(), tok)
 		if !errors.Is(err, errorz.ErrNotFound) {
@@ -407,7 +408,7 @@ func Test_Service_RequestPasswordReset(t *testing.T) {
 			if !ok {
 				t.Fatalf("unexpected data type: %T", data)
 			}
-			if resetTok.ID == 0 {
+			if resetTok.ID == uuid.Nil {
 				t.Fatalf("expected ID to be set")
 			}
 			if len(resetTok.Token) == 0 {
@@ -556,7 +557,7 @@ func Test_Service_ResetPassword(t *testing.T) {
 			RawToken: resetTok,
 		}
 
-		newPass.RawToken.ID = 3
+		newPass.RawToken.ID = uuid.New()
 
 		err := st.svc.ResetPassword(context.Background(), newPass)
 		if !errors.Is(err, errorz.ErrNotFound) {
@@ -906,7 +907,7 @@ func (f *testStore) BeginTx(ctx context.Context) (auth.Tx, error) {
 	})
 }
 
-func (f *testStore) FindUsers(ctx context.Context, filter *auth.UserFilter) ([]auth.User, error) {
+func (f *testStore) FindUsers(ctx context.Context, filter auth.UserFilter) ([]auth.User, error) {
 	return testerr.MaybeFail(f.tracker, func() ([]auth.User, error) {
 		return f.store.FindUsers(ctx, filter)
 	})
@@ -929,37 +930,37 @@ func (tx *testTx) Rollback() error {
 	})
 }
 
-func (tx *testTx) CreateUser(u *auth.User) error {
+func (tx *testTx) CreateUser(u auth.User) error {
 	return testerr.MaybeFailErrFunc(tx.store.tracker, func() error {
 		return tx.tx.CreateUser(u)
 	})
 }
 
-func (tx *testTx) UpdateUser(u *auth.User) error {
+func (tx *testTx) UpdateUser(u auth.User) error {
 	return testerr.MaybeFailErrFunc(tx.store.tracker, func() error {
 		return tx.tx.UpdateUser(u)
 	})
 }
 
-func (tx *testTx) FindUsers(filter *auth.UserFilter) ([]auth.User, error) {
+func (tx *testTx) FindUsers(filter auth.UserFilter) ([]auth.User, error) {
 	return testerr.MaybeFail(tx.store.tracker, func() ([]auth.User, error) {
 		return tx.tx.FindUsers(filter)
 	})
 }
 
-func (tx *testTx) CreateEmailToken(t *auth.EmailToken) error {
+func (tx *testTx) CreateEmailToken(t auth.EmailToken) error {
 	return testerr.MaybeFailErrFunc(tx.store.tracker, func() error {
 		return tx.tx.CreateEmailToken(t)
 	})
 }
 
-func (tx *testTx) UpdateEmailToken(t *auth.EmailToken) error {
+func (tx *testTx) UpdateEmailToken(t auth.EmailToken) error {
 	return testerr.MaybeFailErrFunc(tx.store.tracker, func() error {
 		return tx.tx.UpdateEmailToken(t)
 	})
 }
 
-func (tx *testTx) FindEmailTokens(filter *auth.EmailTokenFilter) ([]auth.EmailToken, error) {
+func (tx *testTx) FindEmailTokens(filter auth.EmailTokenFilter) ([]auth.EmailToken, error) {
 	return testerr.MaybeFail(tx.store.tracker, func() ([]auth.EmailToken, error) {
 		return tx.tx.FindEmailTokens(filter)
 	})

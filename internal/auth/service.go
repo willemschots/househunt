@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/willemschots/househunt/internal/email"
 	"github.com/willemschots/househunt/internal/errorz"
 	"github.com/willemschots/househunt/internal/krypto"
@@ -134,9 +135,15 @@ func (s *Service) startActivation(ctx context.Context, addr email.Address, pwdHa
 		return err
 	}
 
+	tokenID, err := uuid.NewRandom()
+	if err != nil {
+		return err
+	}
+
 	emailToken := EmailToken{
+		ID:         tokenID,
 		TokenHash:  tokenHash,
-		UserID:     0, // set after inserting the user.
+		UserID:     uuid.Nil, // set after inserting the user.
 		Email:      addr,
 		Purpose:    TokenPurposeActivate,
 		CreatedAt:  now,
@@ -147,7 +154,7 @@ func (s *Service) startActivation(ctx context.Context, addr email.Address, pwdHa
 		// TODO: Limit nr of tokens per user.
 
 		// Find user user with the same email.
-		users, txErr := tx.FindUsers(&UserFilter{
+		users, txErr := tx.FindUsers(UserFilter{
 			Emails: []email.Address{addr},
 		})
 		if txErr != nil {
@@ -155,15 +162,20 @@ func (s *Service) startActivation(ctx context.Context, addr email.Address, pwdHa
 		}
 
 		if len(users) == 0 {
+			userID, txErr := uuid.NewRandom()
+			if err != nil {
+				return txErr
+			}
 			// No user with the this email found, create a new user.
 			user := User{
+				ID:           userID,
 				Email:        addr,
 				PasswordHash: pwdHash,
 				IsActive:     false,
 				CreatedAt:    now,
 				UpdatedAt:    now,
 			}
-			txErr = tx.CreateUser(&user)
+			txErr = tx.CreateUser(user)
 			if txErr != nil {
 				return txErr
 			}
@@ -180,7 +192,7 @@ func (s *Service) startActivation(ctx context.Context, addr email.Address, pwdHa
 		}
 
 		// Create the activation token.
-		txErr = tx.CreateEmailToken(&emailToken)
+		txErr = tx.CreateEmailToken(emailToken)
 		if txErr != nil {
 			return txErr
 		}
@@ -220,8 +232,8 @@ func (s *Service) ActivateUser(ctx context.Context, req EmailTokenRaw) error {
 		}
 
 		// Activate the corresponding user.
-		user, err := findUser(tx, &UserFilter{
-			IDs:      []int{token.UserID},
+		user, err := findUser(tx, UserFilter{
+			IDs:      []uuid.UUID{token.UserID},
 			IsActive: ptr(false),
 		})
 		if err != nil {
@@ -231,7 +243,7 @@ func (s *Service) ActivateUser(ctx context.Context, req EmailTokenRaw) error {
 		user.IsActive = true
 		user.UpdatedAt = now
 
-		err = tx.UpdateUser(&user)
+		err = tx.UpdateUser(user)
 		if err != nil {
 			return err
 		}
@@ -243,7 +255,7 @@ func (s *Service) ActivateUser(ctx context.Context, req EmailTokenRaw) error {
 
 // Authenticate checks if the provided credentials are valid.
 func (s *Service) Authenticate(ctx context.Context, c Credentials) (bool, error) {
-	users, err := s.store.FindUsers(ctx, &UserFilter{
+	users, err := s.store.FindUsers(ctx, UserFilter{
 		Emails:   []email.Address{c.Email},
 		IsActive: ptr(true),
 	})
@@ -297,9 +309,15 @@ func (s *Service) startPasswordReset(ctx context.Context, addr email.Address) er
 		return err
 	}
 
+	tokenID, err := uuid.NewRandom()
+	if err != nil {
+		return err
+	}
+
 	emailToken := EmailToken{
+		ID:         tokenID,
 		TokenHash:  tokenHash,
-		UserID:     0, // set after the user is found.
+		UserID:     uuid.Nil, // set after the user is found.
 		Email:      addr,
 		Purpose:    TokenPurposePasswordReset,
 		CreatedAt:  now,
@@ -308,7 +326,7 @@ func (s *Service) startPasswordReset(ctx context.Context, addr email.Address) er
 
 	err = s.inTx(ctx, func(tx Tx) error {
 		// Find the user with the provided email address.
-		user, txErr := findUser(tx, &UserFilter{
+		user, txErr := findUser(tx, UserFilter{
 			Emails:   []email.Address{addr},
 			IsActive: ptr(true),
 		})
@@ -319,7 +337,7 @@ func (s *Service) startPasswordReset(ctx context.Context, addr email.Address) er
 		// Create the new password reset token.
 		emailToken.UserID = user.ID
 
-		txErr = tx.CreateEmailToken(&emailToken)
+		txErr = tx.CreateEmailToken(emailToken)
 		if txErr != nil {
 			return txErr
 		}
@@ -375,8 +393,8 @@ func (s *Service) ResetPassword(ctx context.Context, np NewPassword) error {
 			return txErr
 		}
 
-		user, txErr := findUser(tx, &UserFilter{
-			IDs:      []int{token.UserID},
+		user, txErr := findUser(tx, UserFilter{
+			IDs:      []uuid.UUID{token.UserID},
 			IsActive: ptr(true),
 		})
 		if txErr != nil {
@@ -390,7 +408,7 @@ func (s *Service) ResetPassword(ctx context.Context, np NewPassword) error {
 		// We will send a confirmation email to the user after the transaction is done.
 		recipient = user.Email
 
-		txErr = tx.UpdateUser(&user)
+		txErr = tx.UpdateUser(user)
 		if txErr != nil {
 			return txErr
 		}
@@ -420,8 +438,8 @@ func (s *Service) ResetPassword(ctx context.Context, np NewPassword) error {
 }
 
 func findConsumableEmailToken(tx Tx, raw EmailTokenRaw, purpose TokenPurpose, now time.Time, maxAge time.Duration) (EmailToken, error) {
-	tokens, err := tx.FindEmailTokens(&EmailTokenFilter{
-		IDs:        []int{raw.ID},
+	tokens, err := tx.FindEmailTokens(EmailTokenFilter{
+		IDs:        []uuid.UUID{raw.ID},
 		Purposes:   []TokenPurpose{purpose},
 		IsConsumed: ptr(false),
 	})
@@ -447,7 +465,7 @@ func findConsumableEmailToken(tx Tx, raw EmailTokenRaw, purpose TokenPurpose, no
 	return token, nil
 }
 
-func findUser(tx Tx, filter *UserFilter) (User, error) {
+func findUser(tx Tx, filter UserFilter) (User, error) {
 	users, err := tx.FindUsers(filter)
 	if err != nil {
 		return User{}, err
@@ -460,9 +478,9 @@ func findUser(tx Tx, filter *UserFilter) (User, error) {
 	return users[0], nil
 }
 
-func consumeAllTokensForUserID(tx Tx, userID int, purpose TokenPurpose, consumedAt time.Time) error {
-	tokens, err := tx.FindEmailTokens(&EmailTokenFilter{
-		UserIDs:  []int{userID},
+func consumeAllTokensForUserID(tx Tx, userID uuid.UUID, purpose TokenPurpose, consumedAt time.Time) error {
+	tokens, err := tx.FindEmailTokens(EmailTokenFilter{
+		UserIDs:  []uuid.UUID{userID},
 		Purposes: []TokenPurpose{purpose},
 		//IsConsumed: ptr(false),
 	})
@@ -472,7 +490,7 @@ func consumeAllTokensForUserID(tx Tx, userID int, purpose TokenPurpose, consumed
 
 	for _, t := range tokens {
 		t.ConsumedAt = ptr(consumedAt)
-		err = tx.UpdateEmailToken(&t)
+		err = tx.UpdateEmailToken(t)
 		if err != nil {
 			return err
 		}

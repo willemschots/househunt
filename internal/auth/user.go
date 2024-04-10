@@ -5,11 +5,13 @@ import (
 
 	"github.com/willemschots/househunt/internal/email"
 	"github.com/willemschots/househunt/internal/krypto"
+
+	"github.com/google/uuid"
 )
 
 // User contains the data for a user.
 type User struct {
-	ID           int
+	ID           uuid.UUID
 	Email        email.Address
 	PasswordHash krypto.Argon2Hash
 	IsActive     bool
