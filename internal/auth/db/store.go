@@ -50,7 +50,7 @@ func (s *Store) BeginTx(ctx context.Context) (auth.Tx, error) {
 	}, nil
 }
 
-func (s *Store) FindUsers(ctx context.Context, filter *auth.UserFilter) ([]auth.User, error) {
+func (s *Store) FindUsers(ctx context.Context, filter auth.UserFilter) ([]auth.User, error) {
 	return selectUsers(s.newQuery(), func(query string, params ...any) (*sql.Rows, error) {
 		return s.readDB.QueryContext(ctx, query, params...)
 	}, filter)

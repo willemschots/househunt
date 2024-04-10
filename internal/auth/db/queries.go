@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/willemschots/househunt/internal/auth"
 	"github.com/willemschots/househunt/internal/db"
 	"github.com/willemschots/househunt/internal/email"
@@ -13,40 +14,35 @@ import (
 type execFunc func(query string, params ...any) (sql.Result, error)
 type queryFunc func(query string, params ...any) (*sql.Rows, error)
 
-func insertUser(q db.Query, ef execFunc, u *auth.User) error {
-	if u.ID != 0 {
-		return fmt.Errorf("user already has an ID: %w", errorz.ErrConstraintViolated)
+func insertUser(q db.Query, ef execFunc, u auth.User) error {
+	if u.ID == uuid.Nil {
+		return fmt.Errorf("zero uuid provided: %w", errorz.ErrConstraintViolated)
 	}
 
-	q.Unsafe(`INSERT INTO users (email_encrypted, email_blind_index, password_hash, is_active, created_at, updated_at) VALUES (`)
+	q.Unsafe(`INSERT INTO users (id, email_encrypted, email_blind_index, password_hash, is_active, created_at, updated_at) VALUES (`)
+	q.Param(u.ID)
+	q.Unsafe(`, `)
 	q.ParamEncrypted([]byte(u.Email))
 	q.Unsafe(`, `)
 	q.ParamBlindIndex([]byte(u.Email))
 	q.Unsafe(`, `)
 	q.Params(u.PasswordHash.String(), u.IsActive, u.CreatedAt, u.UpdatedAt)
-	q.Unsafe(`) RETURNING id`)
+	q.Unsafe(`)`)
 
 	s, params, err := q.Get()
 	if err != nil {
 		return err
 	}
 
-	result, err := ef(s, params...)
+	_, err = ef(s, params...)
 	if err != nil {
 		return errorz.MapDBErr(err)
 	}
 
-	id, err := result.LastInsertId()
-	if err != nil {
-		return err
-	}
-
-	u.ID = int(id)
-
 	return nil
 }
 
-func updateUser(q db.Query, ef execFunc, u *auth.User) error {
+func updateUser(q db.Query, ef execFunc, u auth.User) error {
 	q.Unsafe(`UPDATE users SET `)
 
 	q.Unsafe(`email_encrypted = `)
@@ -92,7 +88,7 @@ func updateUser(q db.Query, ef execFunc, u *auth.User) error {
 	return nil
 }
 
-func selectUsers(q db.Query, qf queryFunc, f *auth.UserFilter) ([]auth.User, error) {
+func selectUsers(q db.Query, qf queryFunc, f auth.UserFilter) ([]auth.User, error) {
 	q.Unsafe(`SELECT id, email_encrypted, password_hash, is_active, created_at, updated_at FROM users WHERE 1=1 `)
 
 	if len(f.IDs) > 0 {
@@ -155,40 +151,33 @@ func selectUsers(q db.Query, qf queryFunc, f *auth.UserFilter) ([]auth.User, err
 	return out, nil
 }
 
-func insertEmailToken(q db.Query, ef execFunc, tok *auth.EmailToken) error {
-	if tok.ID != 0 {
-		return fmt.Errorf("email token already has an ID: %w", errorz.ErrConstraintViolated)
+func insertEmailToken(q db.Query, ef execFunc, tok auth.EmailToken) error {
+	if tok.ID == uuid.Nil {
+		return fmt.Errorf("zero uuid provided: %w", errorz.ErrConstraintViolated)
 	}
 
-	q.Unsafe(`INSERT INTO email_tokens (token_hash, user_id, email_encrypted, purpose, created_at, consumed_at) VALUES (`)
-	q.Params(tok.TokenHash.String(), tok.UserID)
+	q.Unsafe(`INSERT INTO email_tokens (id, token_hash, user_id, email_encrypted, purpose, created_at, consumed_at) VALUES (`)
+	q.Params(tok.ID, tok.TokenHash.String(), tok.UserID)
 	q.Unsafe(`, `)
 	q.ParamEncrypted([]byte(tok.Email))
 	q.Unsafe(`, `)
 	q.Params(tok.Purpose, tok.CreatedAt, tok.ConsumedAt)
-	q.Unsafe(`) RETURNING id`)
+	q.Unsafe(`)`)
 
 	s, params, err := q.Get()
 	if err != nil {
 		return err
 	}
 
-	result, err := ef(s, params...)
+	_, err = ef(s, params...)
 	if err != nil {
 		return errorz.MapDBErr(err)
 	}
 
-	id, err := result.LastInsertId()
-	if err != nil {
-		return err
-	}
-
-	tok.ID = int(id)
-
 	return nil
 }
 
-func updateEmailToken(q db.Query, ef execFunc, tok *auth.EmailToken) error {
+func updateEmailToken(q db.Query, ef execFunc, tok auth.EmailToken) error {
 	q.Unsafe(`UPDATE email_tokens SET `)
 
 	q.Unsafe(`token_hash = `)
@@ -234,7 +223,7 @@ func updateEmailToken(q db.Query, ef execFunc, tok *auth.EmailToken) error {
 	return nil
 }
 
-func selectEmailTokens(q db.Query, qf queryFunc, f *auth.EmailTokenFilter) ([]auth.EmailToken, error) {
+func selectEmailTokens(q db.Query, qf queryFunc, f auth.EmailTokenFilter) ([]auth.EmailToken, error) {
 	q.Unsafe(`SELECT id, token_hash, user_id, email_encrypted, purpose, created_at, consumed_at FROM email_tokens WHERE 1=1 `)
 
 	if len(f.IDs) > 0 {

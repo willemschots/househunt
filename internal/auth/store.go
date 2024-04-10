@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 
+	"github.com/google/uuid"
 	"github.com/willemschots/househunt/internal/email"
 )
 
@@ -10,7 +11,7 @@ import (
 // Returned users must match all the provided fields.
 // If a field is empty or nil, it's ignored.
 type UserFilter struct {
-	IDs      []int
+	IDs      []uuid.UUID
 	Emails   []email.Address
 	IsActive *bool
 }
@@ -19,8 +20,8 @@ type UserFilter struct {
 // Returned tokens must match all the provided fields.
 // If a field is empty or nil, it's ignored.
 type EmailTokenFilter struct {
-	IDs        []int
-	UserIDs    []int
+	IDs        []uuid.UUID
+	UserIDs    []uuid.UUID
 	Purposes   []TokenPurpose
 	IsConsumed *bool
 }
@@ -29,7 +30,7 @@ type EmailTokenFilter struct {
 type Store interface {
 	BeginTx(ctx context.Context) (Tx, error)
 
-	FindUsers(ctx context.Context, filter *UserFilter) ([]User, error)
+	FindUsers(ctx context.Context, filter UserFilter) ([]User, error)
 }
 
 // Tx is a transaction. If an error occurs on any of the Create/Update/Find methods,
@@ -39,11 +40,11 @@ type Tx interface {
 	Commit() error
 	Rollback() error
 
-	CreateUser(u *User) error
-	UpdateUser(u *User) error
-	FindUsers(filter *UserFilter) ([]User, error)
+	CreateUser(u User) error
+	UpdateUser(u User) error
+	FindUsers(filter UserFilter) ([]User, error)
 
-	CreateEmailToken(t *EmailToken) error
-	UpdateEmailToken(t *EmailToken) error
-	FindEmailTokens(filter *EmailTokenFilter) ([]EmailToken, error)
+	CreateEmailToken(t EmailToken) error
+	UpdateEmailToken(t EmailToken) error
+	FindEmailTokens(filter EmailTokenFilter) ([]EmailToken, error)
 }
