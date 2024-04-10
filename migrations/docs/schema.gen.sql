@@ -5,7 +5,7 @@ CREATE TABLE migrations (
 	revision_timestamp TIMESTAMP NOT NULL
 );
 CREATE TABLE users(
-    id                INTEGER PRIMARY KEY,
+    id                TEXT PRIMARY KEY,
     email_encrypted   TEXT NOT NULL,
     email_blind_index TEXT NOT NULL UNIQUE,
     password_hash     TEXT NOT NULL,
@@ -14,9 +14,9 @@ CREATE TABLE users(
     updated_at        TIMESTAMP NOT NULL
 );
 CREATE TABLE email_tokens (
-    id              INTEGER PRIMARY KEY,
+    id              TEXT PRIMARY KEY,
     token_hash      TEXT NOT NULL,
-    user_id         INTEGER NOT NULL,
+    user_id         TEXT NOT NULL,
     email_encrypted TEXT NOT NULL,
     purpose         TEXT NOT NULL,
     created_at      TIMESTAMP NOT NULL,
