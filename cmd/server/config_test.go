@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -15,7 +16,7 @@ func TestConfigFromEnv(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		if want != got {
+		if !reflect.DeepEqual(got, want) {
 			t.Errorf("got\n%+v\nwant\n%+v", got, want)
 		}
 	})
@@ -40,6 +41,12 @@ func TestConfigFromEnv(t *testing.T) {
 		"ok, non-default HTTP_SHUTDOWN_TIMEOUT": {
 			key: "HTTP_SHUTDOWN_TIMEOUT", val: "404ms", mf: func(c *config) { c.http.shutdownTimeout = 404 * time.Millisecond },
 		},
+		"ok, non-default DB_FILENAME": {
+			key: "DB_FILENAME", val: "test.db", mf: func(c *config) { c.db.file = "test.db" },
+		},
+		"ok, non-default DB_MIGRATE": {
+			key: "DB_MIGRATE", val: "false", mf: func(c *config) { c.db.migrate = false },
+		},
 	}
 
 	for name, tc := range valid {
@@ -54,7 +61,7 @@ func TestConfigFromEnv(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
-			if want != got {
+			if !reflect.DeepEqual(got, want) {
 				t.Errorf("got\n%+v\nwant\n%+v", got, want)
 			}
 		})
@@ -68,6 +75,8 @@ func TestConfigFromEnv(t *testing.T) {
 		"fail, negative HTTP_WRITE_TIMEOUT":    {"HTTP_WRITE_TIMEOUT", "-1ms"},
 		"fail, negative HTTP_IDLE_TIMEOUT":     {"HTTP_IDLE_TIMEOUT", "-1ms"},
 		"fail, negative HTTP_SHUTDOWN_TIMEOUT": {"HTTP_SHUTDOWN_TIMEOUT", "-1ms"},
+		"fail, empty DB_FILENAME":              {"DB_FILENAME", ""},
+		"fail, invalid DB_MIGRATE":             {"DB_MIGRATE", "no!"},
 	}
 
 	for name, tc := range invalid {

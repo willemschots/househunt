@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -17,9 +18,15 @@ type httpConfig struct {
 	shutdownTimeout time.Duration
 }
 
+type dbConfig struct {
+	file    string
+	migrate bool
+}
+
 // config is the configuration for the server command.
 type config struct {
 	http httpConfig
+	db   dbConfig
 }
 
 // defaultConfig returns a config with sane default values.
@@ -31,6 +38,10 @@ func defaultConfig() config {
 			writeTimeout:    time.Second * 10,
 			idleTimeout:     time.Second * 120,
 			shutdownTimeout: time.Second * 15,
+		},
+		db: dbConfig{
+			file:    "househunt.db",
+			migrate: true,
 		},
 	}
 }
@@ -52,6 +63,12 @@ var envMap = map[string]func(v string, c *config) error{
 	},
 	"HTTP_SHUTDOWN_TIMEOUT": func(v string, c *config) error {
 		return confDuration(v, &c.http.shutdownTimeout, 0, math.MaxInt64)
+	},
+	"DB_FILENAME": func(v string, c *config) error {
+		return confString(v, &c.db.file, 1, math.MaxInt64)
+	},
+	"DB_MIGRATE": func(v string, c *config) error {
+		return confBool(v, &c.db.migrate)
 	},
 }
 
@@ -89,6 +106,27 @@ func confDuration(v string, tgt *time.Duration, min, max time.Duration) error {
 	}
 
 	*tgt = dur
+
+	return nil
+}
+
+func confString(v string, tgt *string, minLen, maxLen int) error {
+	if len(v) < minLen || len(v) > maxLen {
+		return fmt.Errorf("string length %d not in range [%d, %d] (inclusive)", len(v), minLen, maxLen)
+	}
+
+	*tgt = v
+
+	return nil
+}
+
+func confBool(v string, tgt *bool) error {
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return err
+	}
+
+	*tgt = b
 
 	return nil
 }
