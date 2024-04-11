@@ -29,3 +29,16 @@ You can see househunt in action at [examplego.com](https://examplego.com), this 
 ## Build in public
 
 Househunt is being build in public by [Willem Schots](https://www.willem.dev/), you can follow along [on Twitter](https://www.x.com/willemschots). 
+
+## Running househunt locally
+
+The recommended way to run the project locally is using docker compose, this will ease management of env variable based settings.
+
+1. Create a directory for storing the local data in the project root directory:
+```sh
+mkdir .localdev
+```
+2. Configure `.env` file based on the data in `.env.sample`.
+3. Run `docker compose up`. This will build the app and run it. You should see the database migrations being triggered and the HTTP server starting up.
+4. Navigate to `http://localhost:8888` to see househunt in action.
+

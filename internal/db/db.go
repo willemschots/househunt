@@ -18,7 +18,7 @@ const (
 	readOptions  = "?mode=ro_&_foreign_keys=on&_journal_mode=wal&_busy_timeout=5000"
 )
 
-// OpenSQLite3 opens a pool of SQLite3 connections. Different settings
+// OpenSQLite opens a pool of SQLite connections. Different settings
 // are appropriate for reading and writing, so this function needs to know
 // what the sql.DB will be used for.
 //

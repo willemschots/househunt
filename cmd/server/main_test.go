@@ -3,7 +3,10 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -21,7 +24,7 @@ const (
 )
 
 func Test_Run(t *testing.T) {
-	t.Run("ok, says it started then stopped http server", func(t *testing.T) {
+	t.Run("ok, says it started then stopped http server", testEnv(func(t *testing.T) {
 		out := newBuffer()
 
 		ctx := cancelOnceServed(t, publicURL)
@@ -37,9 +40,44 @@ func Test_Run(t *testing.T) {
 			"stopping http server",
 			"http server stopped successfully",
 		)
-	})
+	}))
 
-	t.Run("fail, invalid environment", func(t *testing.T) {
+	t.Run("ok, says it ran migrations", testEnv(func(t *testing.T) {
+		out := newBuffer()
+
+		ctx := cancelOnceServed(t, publicURL)
+
+		got := run(ctx, out)
+		want := 0
+		if got != want {
+			t.Fatalf("got exit code %d, want %d. logs:\n%s", got, want, out.String())
+		}
+
+		assertLog(t, out.String(),
+			"attempting to migrate database",
+			"migration ran",
+		)
+	}))
+
+	t.Run("ok, did not say it ran migrations when DB_MIGRATE=false", testEnv(func(t *testing.T) {
+		envForTest(t, "DB_MIGRATE", "false")
+
+		out := newBuffer()
+
+		ctx := cancelOnceServed(t, publicURL)
+
+		got := run(ctx, out)
+		want := 0
+		if got != want {
+			t.Fatalf("got exit code %d, want %d. logs:\n%s", got, want, out.String())
+		}
+
+		if strings.Contains(out.String(), "attempting to migrate database") {
+			t.Errorf("expected not to run migrations, but did")
+		}
+	}))
+
+	t.Run("fail, invalid environment", testEnv(func(t *testing.T) {
 		envForTest(t, "HTTP_READ_TIMEOUT", "-1ms")
 
 		out := newBuffer()
@@ -55,7 +93,7 @@ func Test_Run(t *testing.T) {
 		}
 
 		assertLog(t, out.String(), "failed to get config from environment")
-	})
+	}))
 }
 
 // safeBuffer is a buffer that is safe for concurrent use.
@@ -150,4 +188,50 @@ func waitForStatusOK(ctx context.Context, url string) error {
 			return ctx.Err()
 		}
 	}
+}
+
+// testEnv returns a test function that is ensures the environment is ready to run the app and cleans up afterwards.
+func testEnv(testFunc func(t *testing.T)) func(t *testing.T) {
+	env := make(map[string]string, 0)
+
+	for key, val := range requiredEnv() {
+		env[key] = val
+	}
+
+	// add/overwrite env variables.
+	env["DB_FILENAME"] = "househunt-unit-test.db"
+
+	return func(t *testing.T) {
+		t.Helper()
+
+		for key, val := range env {
+			envForTest(t, key, val)
+		}
+
+		t.Cleanup(func() {
+			// remove database files.
+			dbFile := env["DB_FILENAME"]
+			files := []string{
+				dbFile,
+				fmt.Sprintf("%s-shm", dbFile),
+				fmt.Sprintf("%s-wal", dbFile),
+			}
+
+			for _, file := range files {
+				err := os.Remove(file)
+				if err != nil && !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("failed to remove file %s: %v", file, err)
+				}
+			}
+		})
+
+		testFunc(t)
+	}
+}
+
+func must[T any](v T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return v
 }
