@@ -6,7 +6,10 @@ import (
 	"math"
 	"os"
 	"strconv"
+	"strings"
 	"time"
+
+	"github.com/willemschots/househunt/internal/krypto"
 )
 
 // httpConfig is the configuration for the HTTP server.
@@ -18,15 +21,22 @@ type httpConfig struct {
 	shutdownTimeout time.Duration
 }
 
+// dbConfig is the database configuration.
 type dbConfig struct {
 	file    string
 	migrate bool
 }
 
+// cryptoConfig is the encryption configuration.
+type cryptoConfig struct {
+	keys []krypto.Key
+}
+
 // config is the configuration for the server command.
 type config struct {
-	http httpConfig
-	db   dbConfig
+	http   httpConfig
+	db     dbConfig
+	crypto cryptoConfig
 }
 
 // defaultConfig returns a config with sane default values.
@@ -46,29 +56,55 @@ func defaultConfig() config {
 	}
 }
 
+type envVariable struct {
+	required bool
+	mapFunc  func(v string, c *config) error
+}
+
 // envMap maps environment variable names to fields in the config struct.
-var envMap = map[string]func(v string, c *config) error{
-	"HTTP_ADDR": func(v string, c *config) error {
-		c.http.addr = v
-		return nil
+
+var envMap = map[string]envVariable{
+	"HTTP_ADDR": {
+		mapFunc: func(v string, c *config) error {
+			c.http.addr = v
+			return nil
+		},
 	},
-	"HTTP_READ_TIMEOUT": func(v string, c *config) error {
-		return confDuration(v, &c.http.readTimeout, 0, math.MaxInt64)
+	"HTTP_READ_TIMEOUT": {
+		mapFunc: func(v string, c *config) error {
+			return confDuration(v, &c.http.readTimeout, 0, math.MaxInt64)
+		},
 	},
-	"HTTP_WRITE_TIMEOUT": func(v string, c *config) error {
-		return confDuration(v, &c.http.writeTimeout, 0, math.MaxInt64)
+	"HTTP_WRITE_TIMEOUT": {
+		mapFunc: func(v string, c *config) error {
+			return confDuration(v, &c.http.writeTimeout, 0, math.MaxInt64)
+		},
 	},
-	"HTTP_IDLE_TIMEOUT": func(v string, c *config) error {
-		return confDuration(v, &c.http.idleTimeout, 0, math.MaxInt64)
+	"HTTP_IDLE_TIMEOUT": {
+		mapFunc: func(v string, c *config) error {
+			return confDuration(v, &c.http.idleTimeout, 0, math.MaxInt64)
+		},
 	},
-	"HTTP_SHUTDOWN_TIMEOUT": func(v string, c *config) error {
-		return confDuration(v, &c.http.shutdownTimeout, 0, math.MaxInt64)
+	"HTTP_SHUTDOWN_TIMEOUT": {
+		mapFunc: func(v string, c *config) error {
+			return confDuration(v, &c.http.shutdownTimeout, 0, math.MaxInt64)
+		},
 	},
-	"DB_FILENAME": func(v string, c *config) error {
-		return confString(v, &c.db.file, 1, math.MaxInt64)
+	"DB_FILENAME": {
+		mapFunc: func(v string, c *config) error {
+			return confString(v, &c.db.file, 1, math.MaxInt64)
+		},
 	},
-	"DB_MIGRATE": func(v string, c *config) error {
-		return confBool(v, &c.db.migrate)
+	"DB_MIGRATE": {
+		mapFunc: func(v string, c *config) error {
+			return confBool(v, &c.db.migrate)
+		},
+	},
+	"CRYPTO_KEYS": {
+		required: true,
+		mapFunc: func(v string, c *config) error {
+			return confCryptoKeys(v, &c.crypto.keys, 1)
+		},
 	},
 }
 
@@ -82,11 +118,17 @@ func configFromEnv() (config, error) {
 	c := defaultConfig()
 
 	var errSum error
-	for key, mf := range envMap {
-		if val, ok := os.LookupEnv(key); ok {
-			if err := mf(val, &c); err != nil {
-				errSum = errors.Join(errSum, fmt.Errorf("invalid env variable %s: %w", key, err))
+	for key, envVar := range envMap {
+		val, ok := os.LookupEnv(key)
+		if !ok {
+			if envVar.required {
+				errSum = errors.Join(errSum, fmt.Errorf("missing required env variable %s", key))
 			}
+			continue
+		}
+
+		if err := envVar.mapFunc(val, &c); err != nil {
+			errSum = errors.Join(errSum, fmt.Errorf("invalid env variable %s: %w", key, err))
 		}
 	}
 
@@ -127,6 +169,23 @@ func confBool(v string, tgt *bool) error {
 	}
 
 	*tgt = b
+
+	return nil
+}
+
+func confCryptoKeys(v string, tgt *[]krypto.Key, minLen int) error {
+	for i, key := range strings.Split(v, ",") {
+		k, err := krypto.ParseKey(key)
+		if err != nil {
+			return fmt.Errorf("failed to parse crypto key: %d: %w", i, err)
+		}
+
+		*tgt = append(*tgt, k)
+	}
+
+	if len(*tgt) < minLen {
+		return fmt.Errorf("not enough crypto keys, got %d, want at least %d", len(*tgt), minLen)
+	}
 
 	return nil
 }

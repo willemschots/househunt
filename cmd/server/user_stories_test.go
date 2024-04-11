@@ -12,7 +12,7 @@ import (
 // Test_UserStories tests the user stories of the application.
 // These are end-to-end tests and won't check the nitty-gritty details or edge cases.
 func Test_UserStories(t *testing.T) {
-	t.Run("as an unauthenticated agent, I want to", appTest(func(t *testing.T) {
+	t.Run("as an unauthenticated agent, I want to", testEnv(func(t *testing.T) {
 		runAppForTest(t)
 
 		t.Run("view the user registration form", func(t *testing.T) {

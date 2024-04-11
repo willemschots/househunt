@@ -1,16 +1,42 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/willemschots/househunt/internal/krypto"
 )
 
+func requiredEnv() map[string]string {
+	return map[string]string{
+		"CRYPTO_KEYS": "2b671594b775f371eab4050b4d58326682df6b1a6cc2e886717b1a26b4d6c45d",
+	}
+}
+
+func newConfig(mf func(*config)) config {
+	c := defaultConfig()
+	c.crypto.keys = []krypto.Key{
+		must(krypto.ParseKey("2b671594b775f371eab4050b4d58326682df6b1a6cc2e886717b1a26b4d6c45d")),
+	}
+
+	if mf != nil {
+		mf(&c)
+	}
+	return c
+}
+
 func TestConfigFromEnv(t *testing.T) {
-	t.Run("ok, uses defaults for empty environment", func(t *testing.T) {
-		want := defaultConfig()
+	t.Run("ok, uses defaults for non-required env variables", func(t *testing.T) {
+		// set the required env variables.
+		for key, val := range requiredEnv() {
+			envForTest(t, key, val)
+		}
+
+		want := newConfig(nil)
 		got, err := configFromEnv()
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -47,15 +73,29 @@ func TestConfigFromEnv(t *testing.T) {
 		"ok, non-default DB_MIGRATE": {
 			key: "DB_MIGRATE", val: "false", mf: func(c *config) { c.db.migrate = false },
 		},
+		"ok, multiple CRYPTO_KEYS": {
+			key: "CRYPTO_KEYS",
+			val: "2b671594b775f371eab4050b4d58326682df6b1a6cc2e886717b1a26b4d6c45d,ab671594b775f371eab4050b4d58326682df6b1a6cc2e886717b1a26b4d6c45d",
+			mf: func(c *config) {
+				c.crypto.keys = []krypto.Key{
+					must(krypto.ParseKey("2b671594b775f371eab4050b4d58326682df6b1a6cc2e886717b1a26b4d6c45d")),
+					must(krypto.ParseKey("ab671594b775f371eab4050b4d58326682df6b1a6cc2e886717b1a26b4d6c45d")),
+				}
+			},
+		},
 	}
 
 	for name, tc := range valid {
 		t.Run(name, func(t *testing.T) {
-			want := defaultConfig()
-			tc.mf(&want)
+			// set the required env variables.
+			for key, val := range requiredEnv() {
+				envForTest(t, key, val)
+			}
 
+			// set the tested env variable
 			envForTest(t, tc.key, tc.val)
 
+			want := newConfig(tc.mf)
 			got, err := configFromEnv()
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
@@ -77,10 +117,18 @@ func TestConfigFromEnv(t *testing.T) {
 		"fail, negative HTTP_SHUTDOWN_TIMEOUT": {"HTTP_SHUTDOWN_TIMEOUT", "-1ms"},
 		"fail, empty DB_FILENAME":              {"DB_FILENAME", ""},
 		"fail, invalid DB_MIGRATE":             {"DB_MIGRATE", "no!"},
+		"fail, empty CRYPTO_KEYS":              {"CRYPTO_KEYS", ""},
+		"fail, invalid CRYPTO_KEYS":            {"CRYPTO_KEYS", "abc"},
 	}
 
 	for name, tc := range invalid {
 		t.Run(name, func(t *testing.T) {
+			// set the required env variables.
+			for key, val := range requiredEnv() {
+				envForTest(t, key, val)
+			}
+
+			// set the tested env variable.
 			envForTest(t, tc.key, tc.val)
 
 			_, err := configFromEnv()
@@ -97,7 +145,36 @@ func TestConfigFromEnv(t *testing.T) {
 		})
 	}
 
+	for key := range requiredEnv() {
+		t.Run(fmt.Sprintf("fail, env variable %s not set", key), func(t *testing.T) {
+			// set all required env variables except the one being tested.
+			for k, val := range requiredEnv() {
+				if k != key {
+					envForTest(t, k, val)
+				}
+			}
+
+			_, err := configFromEnv()
+			if err == nil {
+				t.Fatal("expected error, got <nil>")
+			}
+
+			// Check that the error message contains the missing env variable.
+			// These errors are immediately logged, so I'm fine comparing on a string level.
+			msg := err.Error()
+			if !strings.Contains(msg, key) {
+				t.Errorf("expected error message to mention %s, got %s", key, msg)
+			}
+		})
+	}
+
 	t.Run("fail, multiple invalid env variables", func(t *testing.T) {
+		// set the required env variables.
+		for key, val := range requiredEnv() {
+			envForTest(t, key, val)
+		}
+
+		// set two invalid env variables.
 		envForTest(t, "HTTP_READ_TIMEOUT", "-1ms")
 		envForTest(t, "HTTP_WRITE_TIMEOUT", "-1ms")
 

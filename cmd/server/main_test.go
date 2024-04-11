@@ -24,7 +24,7 @@ const (
 )
 
 func Test_Run(t *testing.T) {
-	t.Run("ok, says it started then stopped http server", appTest(func(t *testing.T) {
+	t.Run("ok, says it started then stopped http server", testEnv(func(t *testing.T) {
 		out := newBuffer()
 
 		ctx := cancelOnceServed(t, publicURL)
@@ -42,7 +42,7 @@ func Test_Run(t *testing.T) {
 		)
 	}))
 
-	t.Run("ok, says it ran migrations", appTest(func(t *testing.T) {
+	t.Run("ok, says it ran migrations", testEnv(func(t *testing.T) {
 		out := newBuffer()
 
 		ctx := cancelOnceServed(t, publicURL)
@@ -59,7 +59,7 @@ func Test_Run(t *testing.T) {
 		)
 	}))
 
-	t.Run("ok, did not say it ran migrations when DB_MIGRATE=false", appTest(func(t *testing.T) {
+	t.Run("ok, did not say it ran migrations when DB_MIGRATE=false", testEnv(func(t *testing.T) {
 		envForTest(t, "DB_MIGRATE", "false")
 
 		out := newBuffer()
@@ -77,7 +77,7 @@ func Test_Run(t *testing.T) {
 		}
 	}))
 
-	t.Run("fail, invalid environment", appTest(func(t *testing.T) {
+	t.Run("fail, invalid environment", testEnv(func(t *testing.T) {
 		envForTest(t, "HTTP_READ_TIMEOUT", "-1ms")
 
 		out := newBuffer()
@@ -190,20 +190,31 @@ func waitForStatusOK(ctx context.Context, url string) error {
 	}
 }
 
-func appTest(testFunc func(t *testing.T)) func(t *testing.T) {
-	testDBFile := "househunt-unit-test.db"
+// testEnv returns a test function that is ensures the environment is ready to run the app and cleans up afterwards.
+func testEnv(testFunc func(t *testing.T)) func(t *testing.T) {
+	env := make(map[string]string, 0)
+
+	for key, val := range requiredEnv() {
+		env[key] = val
+	}
+
+	// add/overwrite env variables.
+	env["DB_FILENAME"] = "househunt-unit-test.db"
 
 	return func(t *testing.T) {
 		t.Helper()
 
-		envForTest(t, "DB_FILENAME", testDBFile)
+		for key, val := range env {
+			envForTest(t, key, val)
+		}
 
 		t.Cleanup(func() {
 			// remove database files.
+			dbFile := env["DB_FILENAME"]
 			files := []string{
-				testDBFile,
-				fmt.Sprintf("%s-shm", testDBFile),
-				fmt.Sprintf("%s-wal", testDBFile),
+				dbFile,
+				fmt.Sprintf("%s-shm", dbFile),
+				fmt.Sprintf("%s-wal", dbFile),
 			}
 
 			for _, file := range files {
@@ -216,4 +227,11 @@ func appTest(testFunc func(t *testing.T)) func(t *testing.T) {
 
 		testFunc(t)
 	}
+}
+
+func must[T any](v T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return v
 }
