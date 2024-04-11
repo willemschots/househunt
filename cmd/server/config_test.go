@@ -13,12 +13,14 @@ import (
 
 func requiredEnv() map[string]string {
 	return map[string]string{
-		"CRYPTO_KEYS": "2b671594b775f371eab4050b4d58326682df6b1a6cc2e886717b1a26b4d6c45d",
+		"DB_BLIND_INDEX_SALT": "b61115eeb1bdf0847f1d7ea978c7da71e3b31361f7450bc8aa12566a16b7b03f",
+		"CRYPTO_KEYS":         "2b671594b775f371eab4050b4d58326682df6b1a6cc2e886717b1a26b4d6c45d",
 	}
 }
 
 func newConfig(mf func(*config)) config {
 	c := defaultConfig()
+	c.db.blindIndexSalt = must(krypto.ParseKey("b61115eeb1bdf0847f1d7ea978c7da71e3b31361f7450bc8aa12566a16b7b03f"))
 	c.crypto.keys = []krypto.Key{
 		must(krypto.ParseKey("2b671594b775f371eab4050b4d58326682df6b1a6cc2e886717b1a26b4d6c45d")),
 	}
@@ -73,15 +75,28 @@ func TestConfigFromEnv(t *testing.T) {
 		"ok, non-default DB_MIGRATE": {
 			key: "DB_MIGRATE", val: "false", mf: func(c *config) { c.db.migrate = false },
 		},
+		"ok, other DB_BLIND_INDEX_KEY": {
+			key: "DB_BLIND_INDEX_SALT",
+			val: "d1d92ba246dc05e7c1e935dd52d02272a218c7ea2ed514d1f68e7baa5f861ddd",
+			mf: func(c *config) {
+				c.db.blindIndexSalt = must(krypto.ParseKey("d1d92ba246dc05e7c1e935dd52d02272a218c7ea2ed514d1f68e7baa5f861ddd"))
+			},
+		},
 		"ok, multiple CRYPTO_KEYS": {
 			key: "CRYPTO_KEYS",
-			val: "2b671594b775f371eab4050b4d58326682df6b1a6cc2e886717b1a26b4d6c45d,ab671594b775f371eab4050b4d58326682df6b1a6cc2e886717b1a26b4d6c45d",
+			val: "2b671594b775f371eab4050b4d58326682df6b1a6cc2e886717b1a26b4d6c45d,cf55b868d8c7a640265365910093113edce9b6c9226f3bd7c87987d23062d421",
 			mf: func(c *config) {
 				c.crypto.keys = []krypto.Key{
 					must(krypto.ParseKey("2b671594b775f371eab4050b4d58326682df6b1a6cc2e886717b1a26b4d6c45d")),
-					must(krypto.ParseKey("ab671594b775f371eab4050b4d58326682df6b1a6cc2e886717b1a26b4d6c45d")),
+					must(krypto.ParseKey("cf55b868d8c7a640265365910093113edce9b6c9226f3bd7c87987d23062d421")),
 				}
 			},
+		},
+		"ok, non-default AUTH_WORKER_TIMEOUT": {
+			key: "AUTH_WORKER_TIMEOUT", val: "42s", mf: func(c *config) { c.auth.WorkerTimeout = 42 * time.Second },
+		},
+		"ok, non-default AUTH_TOKEN_EXPIRY": {
+			key: "AUTH_TOKEN_EXPIRY", val: "51m", mf: func(c *config) { c.auth.TokenExpiry = 51 * time.Minute },
 		},
 	}
 
@@ -117,8 +132,11 @@ func TestConfigFromEnv(t *testing.T) {
 		"fail, negative HTTP_SHUTDOWN_TIMEOUT": {"HTTP_SHUTDOWN_TIMEOUT", "-1ms"},
 		"fail, empty DB_FILENAME":              {"DB_FILENAME", ""},
 		"fail, invalid DB_MIGRATE":             {"DB_MIGRATE", "no!"},
+		"fail, invalid DB_BLIND_INDEX_SALT":    {"DB_BLIND_INDEX_SALT", "abc"},
 		"fail, empty CRYPTO_KEYS":              {"CRYPTO_KEYS", ""},
 		"fail, invalid CRYPTO_KEYS":            {"CRYPTO_KEYS", "abc"},
+		"fail, negative AUTH_WORKER_TIMEOUT":   {"AUTH_WORKER_TIMEOUT", "-1ms"},
+		"fail, negative AUTH_TOKEN_EXPIRY":     {"AUTH_TOKEN_EXPIRY", "-1ms"},
 	}
 
 	for name, tc := range invalid {
@@ -133,7 +151,7 @@ func TestConfigFromEnv(t *testing.T) {
 
 			_, err := configFromEnv()
 			if err == nil {
-				t.Error("expected error, got <nil>")
+				t.Fatal("expected error, got <nil>")
 			}
 
 			// Check that the error message contains the invalid env variable.

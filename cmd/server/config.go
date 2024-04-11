@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/willemschots/househunt/internal/auth"
 	"github.com/willemschots/househunt/internal/krypto"
 )
 
@@ -23,8 +24,9 @@ type httpConfig struct {
 
 // dbConfig is the database configuration.
 type dbConfig struct {
-	file    string
-	migrate bool
+	file           string
+	migrate        bool
+	blindIndexSalt krypto.Key
 }
 
 // cryptoConfig is the encryption configuration.
@@ -37,6 +39,7 @@ type config struct {
 	http   httpConfig
 	db     dbConfig
 	crypto cryptoConfig
+	auth   auth.ServiceConfig
 }
 
 // defaultConfig returns a config with sane default values.
@@ -53,6 +56,10 @@ func defaultConfig() config {
 			file:    "househunt.db",
 			migrate: true,
 		},
+		auth: auth.ServiceConfig{
+			WorkerTimeout: time.Second * 30,
+			TokenExpiry:   time.Minute * 30,
+		},
 	}
 }
 
@@ -62,7 +69,6 @@ type envVariable struct {
 }
 
 // envMap maps environment variable names to fields in the config struct.
-
 var envMap = map[string]envVariable{
 	"HTTP_ADDR": {
 		mapFunc: func(v string, c *config) error {
@@ -100,10 +106,26 @@ var envMap = map[string]envVariable{
 			return confBool(v, &c.db.migrate)
 		},
 	},
+	"DB_BLIND_INDEX_SALT": {
+		required: true,
+		mapFunc: func(v string, c *config) error {
+			return confCryptoKey(v, &c.db.blindIndexSalt)
+		},
+	},
 	"CRYPTO_KEYS": {
 		required: true,
 		mapFunc: func(v string, c *config) error {
-			return confCryptoKeys(v, &c.crypto.keys, 1)
+			return confSliceOf(v, &c.crypto.keys, krypto.ParseKey, 1, math.MaxInt64)
+		},
+	},
+	"AUTH_WORKER_TIMEOUT": {
+		mapFunc: func(v string, c *config) error {
+			return confDuration(v, &c.auth.WorkerTimeout, 0, math.MaxInt64)
+		},
+	},
+	"AUTH_TOKEN_EXPIRY": {
+		mapFunc: func(v string, c *config) error {
+			return confDuration(v, &c.auth.TokenExpiry, 0, math.MaxInt64)
 		},
 	},
 }
@@ -173,18 +195,29 @@ func confBool(v string, tgt *bool) error {
 	return nil
 }
 
-func confCryptoKeys(v string, tgt *[]krypto.Key, minLen int) error {
-	for i, key := range strings.Split(v, ",") {
-		k, err := krypto.ParseKey(key)
-		if err != nil {
-			return fmt.Errorf("failed to parse crypto key: %d: %w", i, err)
-		}
-
-		*tgt = append(*tgt, k)
+func confCryptoKey(v string, tgt *krypto.Key) error {
+	k, err := krypto.ParseKey(v)
+	if err != nil {
+		return err
 	}
 
-	if len(*tgt) < minLen {
-		return fmt.Errorf("not enough crypto keys, got %d, want at least %d", len(*tgt), minLen)
+	*tgt = k
+
+	return nil
+}
+
+func confSliceOf[T any](v string, tgt *[]T, elemFunc func(string) (T, error), minLen, maxLen int) error {
+	for i, elem := range strings.Split(v, ",") {
+		parsed, err := elemFunc(elem)
+		if err != nil {
+			return fmt.Errorf("failed to parse element %d: %w", i, err)
+		}
+
+		*tgt = append(*tgt, parsed)
+	}
+
+	if len(v) < minLen || len(v) > maxLen {
+		return fmt.Errorf("slice length %d not in range [%d, %d] (inclusive)", len(v), minLen, maxLen)
 	}
 
 	return nil

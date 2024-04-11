@@ -15,6 +15,8 @@ import (
 
 	"github.com/willemschots/househunt/assets"
 	"github.com/willemschots/househunt/internal"
+	"github.com/willemschots/househunt/internal/auth"
+	authdb "github.com/willemschots/househunt/internal/auth/db"
 	"github.com/willemschots/househunt/internal/db"
 	"github.com/willemschots/househunt/internal/db/migrate"
 	"github.com/willemschots/househunt/internal/krypto"
@@ -83,13 +85,24 @@ func run(ctx context.Context, w io.Writer) int {
 	}
 
 	// Create encryptor.
-	_, err = krypto.NewEncryptor(cfg.crypto.keys)
+	encryptor, err := krypto.NewEncryptor(cfg.crypto.keys)
 	if err != nil {
 		logger.Error("failed to create encryptor", "error", err)
 		return 1
 	}
 
-	// TODO: Create authentication store and service.
+	// Create authentication store and service.
+	authStore := authdb.New(dbh.write, dbh.read, encryptor, cfg.db.blindIndexSalt)
+
+	authErrHandler := func(err error) {
+		logger.Error("authentication service error", "error", err)
+	}
+
+	_, err = auth.NewService(authStore, nil, authErrHandler, auth.ServiceConfig{})
+	if err != nil {
+		logger.Error("failed to create auth service", "error", err)
+		return 1
+	}
 
 	viewRenderer := view.NewFSRenderer(assets.TemplateFS)
 
