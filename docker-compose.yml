@@ -1,0 +1,14 @@
+version: "3.9"
+services:
+  househunt:
+    build: .
+     # Run container as the current user making it easier to manage files created by the container.
+    user: "${UID}:${GID}"
+    environment:
+    - "CRYPTO_KEYS=${CRYPTO_KEYS}"
+    - "DB_FILENAME=./data/househunt.db"
+    - "DB_BLIND_INDEX_SALT=${DB_BLIND_INDEX_SALT}"
+    volumes:
+    - ./.localdev:/data
+    ports:
+    - "8888:8888"
