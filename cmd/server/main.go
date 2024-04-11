@@ -98,20 +98,24 @@ func run(ctx context.Context, w io.Writer) int {
 		logger.Error("authentication service error", "error", err)
 	}
 
-	_, err = auth.NewService(authStore, nil, authErrHandler, auth.ServiceConfig{})
+	authSvc, err := auth.NewService(authStore, nil, authErrHandler, auth.ServiceConfig{})
 	if err != nil {
 		logger.Error("failed to create auth service", "error", err)
 		return 1
 	}
 
-	viewRenderer := view.NewFSRenderer(assets.TemplateFS)
+	serverDeps := &web.ServerDeps{
+		Logger:       logger,
+		ViewRenderer: view.NewFSRenderer(assets.TemplateFS),
+		AuthService:  authSvc,
+	}
 
 	srv := &http.Server{
 		Addr:         cfg.http.addr,
 		ReadTimeout:  cfg.http.readTimeout,
 		WriteTimeout: cfg.http.writeTimeout,
 		IdleTimeout:  cfg.http.idleTimeout,
-		Handler:      web.NewServer(logger, viewRenderer),
+		Handler:      web.NewServer(serverDeps),
 	}
 
 	// We need to run two tasks concurrently:
