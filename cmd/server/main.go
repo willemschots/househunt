@@ -19,6 +19,8 @@ import (
 	authdb "github.com/willemschots/househunt/internal/auth/db"
 	"github.com/willemschots/househunt/internal/db"
 	"github.com/willemschots/househunt/internal/db/migrate"
+	"github.com/willemschots/househunt/internal/email"
+	emailview "github.com/willemschots/househunt/internal/email/view"
 	"github.com/willemschots/househunt/internal/krypto"
 	"github.com/willemschots/househunt/internal/web"
 	"github.com/willemschots/househunt/internal/web/view"
@@ -91,6 +93,11 @@ func run(ctx context.Context, w io.Writer) int {
 		return 1
 	}
 
+	// Create emailer.
+	emailRenderer := emailview.NewFSRenderer(assets.EmailFS)
+	logSender := email.NewLogSender(logger)
+	emailer := email.NewService(cfg.email.from, emailRenderer, logSender)
+
 	// Create authentication store and service.
 	authStore := authdb.New(dbh.write, dbh.read, encryptor, cfg.db.blindIndexSalt)
 
@@ -98,7 +105,7 @@ func run(ctx context.Context, w io.Writer) int {
 		logger.Error("authentication service error", "error", err)
 	}
 
-	authSvc, err := auth.NewService(authStore, nil, authErrHandler, auth.ServiceConfig{})
+	authSvc, err := auth.NewService(authStore, emailer, authErrHandler, auth.ServiceConfig{})
 	if err != nil {
 		logger.Error("failed to create auth service", "error", err)
 		return 1

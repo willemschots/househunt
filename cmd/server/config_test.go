@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/willemschots/househunt/internal/email"
 	"github.com/willemschots/househunt/internal/krypto"
 )
 
@@ -15,6 +16,7 @@ func requiredEnv() map[string]string {
 	return map[string]string{
 		"DB_BLIND_INDEX_SALT": "b61115eeb1bdf0847f1d7ea978c7da71e3b31361f7450bc8aa12566a16b7b03f",
 		"CRYPTO_KEYS":         "2b671594b775f371eab4050b4d58326682df6b1a6cc2e886717b1a26b4d6c45d",
+		"EMAIL_FROM":          "househunt@example.com",
 	}
 }
 
@@ -24,6 +26,7 @@ func newConfig(mf func(*config)) config {
 	c.crypto.keys = []krypto.Key{
 		must(krypto.ParseKey("2b671594b775f371eab4050b4d58326682df6b1a6cc2e886717b1a26b4d6c45d")),
 	}
+	c.email.from = must(email.ParseAddress("househunt@example.com"))
 
 	if mf != nil {
 		mf(&c)
@@ -98,6 +101,13 @@ func TestConfigFromEnv(t *testing.T) {
 		"ok, non-default AUTH_TOKEN_EXPIRY": {
 			key: "AUTH_TOKEN_EXPIRY", val: "51m", mf: func(c *config) { c.auth.TokenExpiry = 51 * time.Minute },
 		},
+		"ok, other EMAIL_FROM": {
+			key: "EMAIL_FROM",
+			val: "test@example.com",
+			mf: func(c *config) {
+				c.email.from = must(email.ParseAddress("test@example.com"))
+			},
+		},
 	}
 
 	for name, tc := range valid {
@@ -137,6 +147,7 @@ func TestConfigFromEnv(t *testing.T) {
 		"fail, invalid CRYPTO_KEYS":            {"CRYPTO_KEYS", "abc"},
 		"fail, negative AUTH_WORKER_TIMEOUT":   {"AUTH_WORKER_TIMEOUT", "-1ms"},
 		"fail, negative AUTH_TOKEN_EXPIRY":     {"AUTH_TOKEN_EXPIRY", "-1ms"},
+		"fail, invalid EMAIL_FROM":             {"EMAIL_FROM", "@@"},
 	}
 
 	for name, tc := range invalid {

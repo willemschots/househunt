@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/willemschots/househunt/internal/auth"
+	"github.com/willemschots/househunt/internal/email"
 	"github.com/willemschots/househunt/internal/krypto"
 )
 
@@ -34,12 +35,18 @@ type cryptoConfig struct {
 	keys []krypto.Key
 }
 
+// emailConfig is the email configuration.
+type emailConfig struct {
+	from email.Address
+}
+
 // config is the configuration for the server command.
 type config struct {
 	http   httpConfig
 	db     dbConfig
 	crypto cryptoConfig
 	auth   auth.ServiceConfig
+	email  emailConfig
 }
 
 // defaultConfig returns a config with sane default values.
@@ -128,6 +135,12 @@ var envMap = map[string]envVariable{
 			return confDuration(v, &c.auth.TokenExpiry, 0, math.MaxInt64)
 		},
 	},
+	"EMAIL_FROM": {
+		required: true,
+		mapFunc: func(v string, c *config) error {
+			return confEmailAddress(v, &c.email.from)
+		},
+	},
 }
 
 // configFromEnv returns a config with values from the environment. It falls
@@ -202,6 +215,17 @@ func confCryptoKey(v string, tgt *krypto.Key) error {
 	}
 
 	*tgt = k
+
+	return nil
+}
+
+func confEmailAddress(v string, tgt *email.Address) error {
+	email, err := email.ParseAddress(v)
+	if err != nil {
+		return err
+	}
+
+	*tgt = email
 
 	return nil
 }
