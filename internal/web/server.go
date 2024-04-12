@@ -51,9 +51,7 @@ func NewServer(deps *ServerDeps) *Server {
 		}
 	}))
 
-	s.mux.Handle("POST /register", mapRequest(s, deps.AuthService.RegisterUser).response(func(w http.ResponseWriter, _ struct{}) error {
-		return nil
-	}))
+	s.mux.Handle("POST /register", mapRequest(s, deps.AuthService.RegisterUser))
 
 	//registerHandler := newInHandler(s, deps.AuthService.RegisterUser)
 	//registerHandler.outFunc = func(w http.ResponseWriter, _ struct{}) {
