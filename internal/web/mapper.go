@@ -97,7 +97,7 @@ func (e *mapper[IN, OUT]) response(fn func(http.ResponseWriter, OUT) error) *map
 	return e
 }
 
-func (e mapper[IN, OUT]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (e *mapper[IN, OUT]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	in, err := e.req(r)
 	if err != nil {
 		// TODO: Handle error.
@@ -110,7 +110,11 @@ func (e mapper[IN, OUT]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		panic(err)
 	}
 
-	e.res(w, out)
+	err = e.res(w, out)
+	if err != nil {
+		// TODO: Handle error.
+		panic(err)
+	}
 }
 
 // defaultRequest is the default way to map a request to a struct.
