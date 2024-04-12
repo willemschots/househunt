@@ -9,4 +9,7 @@ require (
 	golang.org/x/sync v0.6.0
 )
 
-require golang.org/x/sys v0.18.0 // indirect
+require (
+	github.com/gorilla/schema v1.3.0 // indirect
+	golang.org/x/sys v0.18.0 // indirect
+)

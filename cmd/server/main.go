@@ -105,7 +105,7 @@ func run(ctx context.Context, w io.Writer) int {
 		logger.Error("authentication service error", "error", err)
 	}
 
-	authSvc, err := auth.NewService(authStore, emailer, authErrHandler, auth.ServiceConfig{})
+	authSvc, err := auth.NewService(authStore, emailer, authErrHandler, cfg.auth)
 	if err != nil {
 		logger.Error("failed to create auth service", "error", err)
 		return 1

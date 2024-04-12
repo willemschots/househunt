@@ -63,3 +63,14 @@ func (p Password) Format(f fmt.State, verb rune) {
 func (p Password) MarshalText() ([]byte, error) {
 	return []byte(SecretMarker), nil
 }
+
+func (p *Password) UnmarshalText(text []byte) error {
+	pwd, err := ParsePassword(string(text))
+	if err != nil {
+		return err
+	}
+
+	*p = pwd
+
+	return nil
+}

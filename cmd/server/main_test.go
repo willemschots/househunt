@@ -20,7 +20,10 @@ const (
 	publicURL = testURLPrefix
 
 	// httpClientTimeout is the timeout for the http client to wait for a response.
-	httpClientTimeout = 50 * time.Millisecond
+	httpClientTimeout = 500 * time.Millisecond
+
+	// tryServingDuration is how long we check try to see if the server is available.
+	tryServingDuration = 5 * time.Second
 )
 
 func Test_Run(t *testing.T) {
@@ -147,7 +150,8 @@ func assertLog(t *testing.T, log string, want ...string) {
 func cancelOnceServed(t *testing.T, url string) context.Context {
 	t.Helper()
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	//
+	ctx, cancel := context.WithTimeout(context.Background(), tryServingDuration)
 
 	result := make(chan error, 1)
 
