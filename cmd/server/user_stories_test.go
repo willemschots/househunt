@@ -202,7 +202,11 @@ func (c *client) mustSubmitForm(t *testing.T, form htmlForm, responseFunc func(*
 		url = baseURL + url
 	}
 
-	req, err := http.NewRequest(http.MethodPost, url, strings.NewReader(form.values.Encode()))
+	if form.method == "" {
+		t.Fatalf("form method not set")
+	}
+
+	req, err := http.NewRequest(form.method, url, strings.NewReader(form.values.Encode()))
 	if err != nil {
 		t.Fatalf("unexpected error creating post request: %v", err)
 	}

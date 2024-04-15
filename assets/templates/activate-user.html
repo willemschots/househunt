@@ -3,9 +3,10 @@
 {{define "body"}}
 
 <h1>Activating your account...</h1>
-<form action="/user-activations" id="activate-user">
+<form action="/user-activations" id="activate-user" method="POST">
   <input type="hidden" name="id" value="{{ .ID }}">
   <input type="hidden" name="token" value="{{ .Token }}">
+  <input type="submit" value="Activate Account">
 </form>
 
 {{end}}
