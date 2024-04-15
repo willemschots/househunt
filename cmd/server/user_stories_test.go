@@ -77,6 +77,7 @@ func Test_UserStories(t *testing.T) {
 			form.values.Set("password", "reallyStrongPassword1")
 
 			// TODO: This should redirect to a dashboard page or similar.
+			// TODO: Verify cookie.
 			c.mustSubmitForm(t, form, assertStatusCode(t, http.StatusOK))
 		})
 	}))

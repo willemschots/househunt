@@ -13,7 +13,8 @@ import (
 )
 
 var (
-	ErrDuplicateUser = errors.New("duplicate user")
+	ErrDuplicateUser      = errors.New("duplicate user")
+	ErrInvalidCredentials = errors.New("invalid credentials")
 )
 
 // Emailer is used to send templated emails.
@@ -254,23 +255,28 @@ func (s *Service) ActivateUser(ctx context.Context, req EmailTokenRaw) error {
 }
 
 // Authenticate checks if the provided credentials are valid.
-func (s *Service) Authenticate(ctx context.Context, c Credentials) (bool, error) {
+func (s *Service) Authenticate(ctx context.Context, c Credentials) (User, error) {
 	users, err := s.store.FindUsers(ctx, UserFilter{
 		Emails:   []email.Address{c.Email},
 		IsActive: ptr(true),
 	})
 	if err != nil {
-		return false, err
+		return User{}, err
 	}
 
 	if len(users) != 1 {
 		// Even if no user is found we compare to a hash to prevent timing differences
 		// that could result in user enumeration attacks.
 		_ = c.Password.Match(s.comparisonHash)
-		return false, nil
+		return User{}, ErrInvalidCredentials
 	}
 
-	return c.Password.Match(users[0].PasswordHash), nil
+	match := c.Password.Match(users[0].PasswordHash)
+	if !match {
+		return User{}, ErrInvalidCredentials
+	}
+
+	return users[0], nil
 }
 
 // RequestPasswordReset requests a password reset for the user with the provided email address.

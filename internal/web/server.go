@@ -2,12 +2,20 @@ package web
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/schema"
+	"github.com/gorilla/sessions"
 	"github.com/willemschots/househunt/internal/auth"
+	"github.com/willemschots/househunt/internal/errorz"
+)
+
+const (
+	AuthSession = "hh-auth"
 )
 
 // ViewRenderer renders named views with the given data.
@@ -20,12 +28,14 @@ type ServerDeps struct {
 	Logger       *slog.Logger
 	ViewRenderer ViewRenderer
 	AuthService  *auth.Service
+	SessionStore sessions.Store
 }
 
 type Server struct {
-	deps    *ServerDeps
-	mux     *http.ServeMux
-	decoder *schema.Decoder
+	deps     *ServerDeps
+	mux      *http.ServeMux
+	decoder  *schema.Decoder
+	sessions sessions.Store
 }
 
 func NewServer(deps *ServerDeps) *Server {
@@ -47,21 +57,18 @@ func NewServer(deps *ServerDeps) *Server {
 	}
 
 	s.mux.Handle("GET /user-activations", mapBoth(s, forwardRawToken).response(func(r result[auth.EmailTokenRaw, auth.EmailTokenRaw]) error {
-		return s.view(r.w, "activate-user", r.out)
+		return s.writeView(r.w, "activate-user", r.out)
 	}))
 
 	s.mux.Handle("POST /user-activations", mapRequest(s, deps.AuthService.ActivateUser))
 
 	// Login user endpoints
 	s.mux.Handle("GET /login", s.staticHandler("login-user"))
-	s.mux.Handle("POST /login", mapBoth(s, deps.AuthService.Authenticate).response(func(r result[auth.Credentials, bool]) error {
-		if !r.out {
-			// TODO: Handle failure to authenticate.
-			return nil
-		}
-
+	s.mux.Handle("POST /login", mapBoth(s, deps.AuthService.Authenticate).response(func(r result[auth.Credentials, auth.User]) error {
 		// Authenticated.
-		// TODO: Create session and redirect to home.
+		// TODO: Refresh CSRF token once implemented.
+		//s.writeAuthSession(r.w, r.r, r.out.ID)
+		// TODO: Redirect to dashboard.
 		return nil
 	}))
 
@@ -92,19 +99,51 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mux.ServeHTTP(w, r)
 }
 
-func (s *Server) view(w http.ResponseWriter, name string, data any) error {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	return s.deps.ViewRenderer.Render(w, name, data)
-}
-
 func (s *Server) staticHandler(name string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		err := s.view(w, name, nil)
+		err := s.writeView(w, name, nil)
 		if err != nil {
 			s.handleError(w, err)
 			return
 		}
 	}
+}
+
+func (s *Server) writeView(w http.ResponseWriter, name string, data any) error {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	return s.deps.ViewRenderer.Render(w, name, data)
+}
+
+func (s *Server) writeAuthSession(w http.ResponseWriter, r *http.Request, userID uuid.UUID) error {
+	session, err := s.sessions.Get(r, AuthSession)
+	if err != nil {
+		return err
+	}
+
+	if !session.IsNew {
+		return errors.New("non-new session")
+	}
+
+	session.Values["userID"] = userID
+	return s.sessions.Save(r, w, session)
+}
+
+func (s *Server) readAuthSession(r *http.Request) (uuid.UUID, error) {
+	session, err := s.sessions.Get(r, AuthSession)
+	if err != nil {
+		return uuid.Nil, err
+	}
+
+	if session.IsNew {
+		return uuid.Nil, errorz.ErrNotFound
+	}
+
+	userID, ok := session.Values["userID"].(uuid.UUID)
+	if !ok {
+		return uuid.Nil, errors.New("invalid user ID")
+	}
+
+	return userID, nil
 }
 
 func (s *Server) handleError(w http.ResponseWriter, err error) {
