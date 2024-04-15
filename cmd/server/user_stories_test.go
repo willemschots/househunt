@@ -76,9 +76,12 @@ func Test_UserStories(t *testing.T) {
 			form.values.Set("email", "agent@example.com")
 			form.values.Set("password", "reallyStrongPassword1")
 
-			// TODO: This should redirect to a dashboard page or similar.
-			// TODO: Verify cookie.
-			c.mustSubmitForm(t, form, assertStatusCode(t, http.StatusOK))
+			c.mustSubmitForm(t, form, func(res *http.Response) {
+				// TODO: This should redirect to a dashboard page or similar.
+				// TODO: Verify csrf token was reset.
+				assertStatusCode(t, http.StatusOK)(res)
+				assertCookieWasSet(t, "hh-auth")(res)
+			})
 		})
 	}))
 }
@@ -208,6 +211,22 @@ func assertStatusCode(t *testing.T, status int) func(*http.Response) {
 	return func(res *http.Response) {
 		if res.StatusCode != status {
 			t.Fatalf("expected status %d, got %d", status, res.StatusCode)
+		}
+	}
+}
+
+func assertCookieWasSet(t *testing.T, name string) func(*http.Response) {
+	return func(res *http.Response) {
+		foundCookie := false
+		for _, cookie := range res.Cookies() {
+			if cookie.Name == name {
+				foundCookie = true
+				break
+			}
+		}
+
+		if !foundCookie {
+			t.Error("expected auth cookie to be set")
 		}
 	}
 }

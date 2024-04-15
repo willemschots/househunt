@@ -32,10 +32,9 @@ type ServerDeps struct {
 }
 
 type Server struct {
-	deps     *ServerDeps
-	mux      *http.ServeMux
-	decoder  *schema.Decoder
-	sessions sessions.Store
+	deps    *ServerDeps
+	mux     *http.ServeMux
+	decoder *schema.Decoder
 }
 
 func NewServer(deps *ServerDeps) *Server {
@@ -67,9 +66,8 @@ func NewServer(deps *ServerDeps) *Server {
 	s.mux.Handle("POST /login", mapBoth(s, deps.AuthService.Authenticate).response(func(r result[auth.Credentials, auth.User]) error {
 		// Authenticated.
 		// TODO: Refresh CSRF token once implemented.
-		//s.writeAuthSession(r.w, r.r, r.out.ID)
 		// TODO: Redirect to dashboard.
-		return nil
+		return s.writeAuthSession(r.w, r.r, r.out.ID)
 	}))
 
 	//s.mux.Handle("GET /login")
@@ -115,7 +113,7 @@ func (s *Server) writeView(w http.ResponseWriter, name string, data any) error {
 }
 
 func (s *Server) writeAuthSession(w http.ResponseWriter, r *http.Request, userID uuid.UUID) error {
-	session, err := s.sessions.Get(r, AuthSession)
+	session, err := s.deps.SessionStore.Get(r, AuthSession)
 	if err != nil {
 		return err
 	}
@@ -125,11 +123,11 @@ func (s *Server) writeAuthSession(w http.ResponseWriter, r *http.Request, userID
 	}
 
 	session.Values["userID"] = userID
-	return s.sessions.Save(r, w, session)
+	return s.deps.SessionStore.Save(r, w, session)
 }
 
 func (s *Server) readAuthSession(r *http.Request) (uuid.UUID, error) {
-	session, err := s.sessions.Get(r, AuthSession)
+	session, err := s.deps.SessionStore.Get(r, AuthSession)
 	if err != nil {
 		return uuid.Nil, err
 	}

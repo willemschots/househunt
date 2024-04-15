@@ -46,3 +46,10 @@ func (k Key) Format(f fmt.State, verb rune) {
 func (k Key) MarshalText() ([]byte, error) {
 	return []byte(SecretMarker), nil
 }
+
+// SecretValue returns the key as a byte slice. This is provided
+// as an escape hatch for cases where the key needs to be provided
+// to third party packages or libraries.
+func (k Key) SecretValue() []byte {
+	return k.value
+}

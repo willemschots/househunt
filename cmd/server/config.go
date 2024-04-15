@@ -22,27 +22,26 @@ type httpConfig struct {
 	writeTimeout    time.Duration
 	idleTimeout     time.Duration
 	shutdownTimeout time.Duration
+	// cookieKeys are the pairs of keys used to authenticate and encrypt cookies.
+	// see https://pkg.go.dev/github.com/gorilla/sessions for more information on how these
+	// are interpreted.
+	cookieKeys []krypto.Key
 }
 
 // dbConfig is the database configuration.
 type dbConfig struct {
 	file           string
 	migrate        bool
+	encryptionKeys []krypto.Key
 	blindIndexSalt krypto.Key
-}
-
-// cryptoConfig is the encryption configuration.
-type cryptoConfig struct {
-	keys []krypto.Key
 }
 
 // config is the configuration for the server command.
 type config struct {
-	http   httpConfig
-	db     dbConfig
-	crypto cryptoConfig
-	auth   auth.ServiceConfig
-	email  email.ServiceConfig
+	http  httpConfig
+	db    dbConfig
+	auth  auth.ServiceConfig
+	email email.ServiceConfig
 }
 
 // defaultConfig returns a config with sane default values.
@@ -114,6 +113,12 @@ var envMap = map[string]envVariable{
 			return confDuration(v, &c.http.shutdownTimeout, 0, math.MaxInt64)
 		},
 	},
+	"HTTP_COOKIE_KEYS": {
+		required: true,
+		mapFunc: func(v string, c *config) error {
+			return confSliceOf(v, &c.http.cookieKeys, krypto.ParseKey, 2, math.MaxInt64)
+		},
+	},
 	"DB_FILENAME": {
 		mapFunc: func(v string, c *config) error {
 			return confString(v, &c.db.file, 1, math.MaxInt64)
@@ -130,10 +135,10 @@ var envMap = map[string]envVariable{
 			return confCryptoKey(v, &c.db.blindIndexSalt)
 		},
 	},
-	"CRYPTO_KEYS": {
+	"DB_ENCRYPTION_KEYS": {
 		required: true,
 		mapFunc: func(v string, c *config) error {
-			return confSliceOf(v, &c.crypto.keys, krypto.ParseKey, 1, math.MaxInt64)
+			return confSliceOf(v, &c.db.encryptionKeys, krypto.ParseKey, 2, math.MaxInt64)
 		},
 	},
 	"AUTH_WORKER_TIMEOUT": {

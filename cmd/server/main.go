@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/gob"
 	"errors"
 	"fmt"
 	"io"
@@ -13,6 +14,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/gorilla/sessions"
 	"github.com/willemschots/househunt/assets"
 	"github.com/willemschots/househunt/internal"
 	"github.com/willemschots/househunt/internal/auth"
@@ -86,8 +89,8 @@ func run(ctx context.Context, w io.Writer) int {
 		}
 	}
 
-	// Create encryptor.
-	encryptor, err := krypto.NewEncryptor(cfg.crypto.keys)
+	// Create DB encryptor.
+	encryptor, err := krypto.NewEncryptor(cfg.db.encryptionKeys)
 	if err != nil {
 		logger.Error("failed to create encryptor", "error", err)
 		return 1
@@ -111,10 +114,24 @@ func run(ctx context.Context, w io.Writer) int {
 		return 1
 	}
 
+	// Create cookie store to store sessions.
+	keysAsBytes := make([][]byte, len(cfg.http.cookieKeys))
+	for i, key := range cfg.http.cookieKeys {
+		keysAsBytes[i] = key.SecretValue()
+	}
+	sessionStore := sessions.NewCookieStore(keysAsBytes...)
+	sessionStore.Options.Secure = true
+	sessionStore.Options.HttpOnly = true
+	sessionStore.MaxAge(7 * 24 * 60 * 60) // 1 week
+
+	// Register UUID type for inclusion in the session values.
+	gob.Register(uuid.UUID{})
+
 	serverDeps := &web.ServerDeps{
 		Logger:       logger,
 		ViewRenderer: view.NewFSRenderer(assets.TemplateFS),
 		AuthService:  authSvc,
+		SessionStore: sessionStore,
 	}
 
 	srv := &http.Server{
