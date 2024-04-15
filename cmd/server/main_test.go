@@ -14,10 +14,10 @@ import (
 )
 
 const (
-	// testURLPrefix is used to identify the scheme, host and port of the test server.
-	testURLPrefix = "http://localhost:8888"
+	// baseURL is used to identify the scheme, host and port of the test server.
+	baseURL = "http://localhost:8888"
 	// publicURL is an unauthenticated URL that we check to see if the server is available.
-	publicURL = testURLPrefix
+	publicURL = baseURL
 
 	// httpClientTimeout is the timeout for the http client to wait for a response.
 	httpClientTimeout = 500 * time.Millisecond

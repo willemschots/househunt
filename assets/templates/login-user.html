@@ -1,12 +1,12 @@
-{{ define "title" }}Register as an agent{{end}}
+{{ define "title" }}Login to your account{{end}}
 
 {{define "body"}}
 
-<h1>Register as an Agent</h1>
-<form action="/register" id="register-user">
+<h1>Login</h1>
+<form action="/login" id="login-user">
   <input type="email" name="email" placeholder="Email" required>
   <input type="password" name="password" placeholder="Password" required>
-  <input type="submit" value="Register Account">
+  <input type="submit" value="Login">
 </form>
 
 {{end}}

@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"net/http"
@@ -34,24 +35,37 @@ func NewServer(deps *ServerDeps) *Server {
 		decoder: schema.NewDecoder(),
 	}
 
-	s.mux.Handle("GET /", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		err := deps.ViewRenderer.Render(w, "hello-world", "Hello World! (via a template)")
-		if err != nil {
-			deps.Logger.Error("error rendering view", "error", err)
-		}
-	}))
+	s.mux.Handle("GET /{$}", s.staticHandler("hello-world"))
 
-	s.mux.Handle("GET /register", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		deps.Logger.Info("register page requested")
-		w.WriteHeader(http.StatusOK)
-		err := deps.ViewRenderer.Render(w, "register-user", nil)
-		if err != nil {
-			deps.Logger.Error("error rendering view", "error", err)
-		}
-	}))
-
+	// Register user endpoints.
+	s.mux.Handle("GET /register", s.staticHandler("register-user"))
 	s.mux.Handle("POST /register", mapRequest(s, deps.AuthService.RegisterUser))
+
+	// Activate user endpoints.
+	forwardRawToken := func(ctx context.Context, token auth.EmailTokenRaw) (auth.EmailTokenRaw, error) {
+		return token, nil
+	}
+
+	s.mux.Handle("GET /user-activations", mapBoth(s, forwardRawToken).response(func(r result[auth.EmailTokenRaw, auth.EmailTokenRaw]) error {
+		return s.view(r.w, "activate-user", r.out)
+	}))
+
+	s.mux.Handle("POST /user-activations", mapRequest(s, deps.AuthService.ActivateUser))
+
+	// Login user endpoints
+	s.mux.Handle("GET /login", s.staticHandler("login-user"))
+	s.mux.Handle("POST /login", mapBoth(s, deps.AuthService.Authenticate).response(func(r result[auth.Credentials, bool]) error {
+		if !r.out {
+			// TODO: Handle failure to authenticate.
+			return nil
+		}
+
+		// Authenticated.
+		// TODO: Create session and redirect to home.
+		return nil
+	}))
+
+	//s.mux.Handle("GET /login")
 
 	//registerHandler := newInHandler(s, deps.AuthService.RegisterUser)
 	//registerHandler.outFunc = func(w http.ResponseWriter, _ struct{}) {
@@ -76,4 +90,24 @@ func NewServer(deps *ServerDeps) *Server {
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mux.ServeHTTP(w, r)
+}
+
+func (s *Server) view(w http.ResponseWriter, name string, data any) error {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	return s.deps.ViewRenderer.Render(w, name, data)
+}
+
+func (s *Server) staticHandler(name string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		err := s.view(w, name, nil)
+		if err != nil {
+			s.handleError(w, err)
+			return
+		}
+	}
+}
+
+func (s *Server) handleError(w http.ResponseWriter, err error) {
+	// TODO: Properly handle error.
+	panic(err)
 }

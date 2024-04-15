@@ -1,0 +1,11 @@
+{{ define "title" }}Activating your account{{end}}
+
+{{define "body"}}
+
+<h1>Activating your account...</h1>
+<form action="/user-activations" id="activate-user">
+  <input type="hidden" name="id" value="{{ .ID }}">
+  <input type="hidden" name="token" value="{{ .Token }}">
+</form>
+
+{{end}}

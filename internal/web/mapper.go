@@ -9,9 +9,20 @@ import (
 // function calls and writes the output to the response.
 type mapper[IN, OUT any] struct {
 	s      *Server
-	req    func(r *http.Request) (IN, error)
+	req    func(*http.Request) (IN, error)
 	target func(context.Context, IN) (OUT, error)
-	res    func(http.ResponseWriter, OUT) error
+	res    func(result[IN, OUT]) error
+}
+
+// result is the result of a succesful request.
+// it contains all relevant data because we can't know
+// in advance what we will need to construct a response.
+type result[IN, OUT any] struct {
+	s   *Server
+	r   *http.Request
+	w   http.ResponseWriter
+	in  IN
+	out OUT
 }
 
 // mapBoth creates a HTTP Handler that:
@@ -27,8 +38,8 @@ func mapBoth[IN, OUT any](s *Server, targetFunc func(context.Context, IN) (OUT, 
 			return defaultRequest[IN](s, r)
 		},
 		target: targetFunc,
-		res: func(w http.ResponseWriter, out OUT) error {
-			return defaultResponse(w, out)
+		res: func(r result[IN, OUT]) error {
+			return defaultResponse(r)
 		},
 	}
 }
@@ -36,7 +47,7 @@ func mapBoth[IN, OUT any](s *Server, targetFunc func(context.Context, IN) (OUT, 
 // mapRequest creates a HTTP Handler that:
 // 1. Maps the request to a value of type IN.
 // 2. Calls the target func with that value.
-// 3. Writes a status 200 response to the client.
+// 3. Writes a status 200 response to the client if target func was successful.
 //
 // Errors are written using the server error handler.
 func mapRequest[IN any](s *Server, targetFunc func(context.Context, IN) error) *mapper[IN, struct{}] {
@@ -53,8 +64,8 @@ func mapRequest[IN any](s *Server, targetFunc func(context.Context, IN) error) *
 
 			return struct{}{}, nil
 		},
-		res: func(w http.ResponseWriter, _ struct{}) error {
-			// TODO: Always write http.StatusOK?
+		res: func(r result[IN, struct{}]) error {
+			// TODO: actually write a response.
 			return nil
 		},
 	}
@@ -79,8 +90,8 @@ func mapResponse[OUT any](s *Server, targetFunc func(context.Context) (OUT, erro
 
 			return out, nil
 		},
-		res: func(w http.ResponseWriter, out OUT) error {
-			return defaultResponse(w, out)
+		res: func(r result[struct{}, OUT]) error {
+			return defaultResponse(r)
 		},
 	}
 }
@@ -92,7 +103,7 @@ func (e *mapper[IN, OUT]) request(fn func(r *http.Request) (IN, error)) *mapper[
 }
 
 // response overwrites the function that writes the output to the response.
-func (e *mapper[IN, OUT]) response(fn func(http.ResponseWriter, OUT) error) *mapper[IN, OUT] {
+func (e *mapper[IN, OUT]) response(fn func(result[IN, OUT]) error) *mapper[IN, OUT] {
 	e.res = fn
 	return e
 }
@@ -100,20 +111,28 @@ func (e *mapper[IN, OUT]) response(fn func(http.ResponseWriter, OUT) error) *map
 func (e *mapper[IN, OUT]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	in, err := e.req(r)
 	if err != nil {
-		// TODO: Handle error.
-		panic(err)
+		e.s.handleError(w, err)
+		return
 	}
 
 	out, err := e.target(r.Context(), in)
 	if err != nil {
-		// TODO: Handle error.
-		panic(err)
+		e.s.handleError(w, err)
+		return
 	}
 
-	err = e.res(w, out)
+	result := result[IN, OUT]{
+		s:   e.s,
+		r:   r,
+		w:   w,
+		in:  in,
+		out: out,
+	}
+
+	err = e.res(result)
 	if err != nil {
-		// TODO: Handle error.
-		panic(err)
+		e.s.handleError(w, err)
+		return
 	}
 }
 
@@ -125,7 +144,7 @@ func defaultRequest[IN any](s *Server, r *http.Request) (IN, error) {
 		return in, err
 	}
 
-	err = s.decoder.Decode(&in, r.PostForm)
+	err = s.decoder.Decode(&in, r.Form)
 	if err != nil {
 		return in, err
 	}
@@ -134,7 +153,7 @@ func defaultRequest[IN any](s *Server, r *http.Request) (IN, error) {
 }
 
 // defaultResponse is the default way to write a response to the client.
-func defaultResponse[OUT any](_ http.ResponseWriter, _ OUT) error {
+func defaultResponse[IN, OUT any](result[IN, OUT]) error {
 	// TODO: Implement.
 	return nil
 }
