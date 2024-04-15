@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"net/url"
 )
 
 // TemplateElement is used by a renderer to identify the different parts of an email template.
@@ -24,16 +25,22 @@ type Sender interface {
 	Send(ctx context.Context, from, recipient Address, subject, body string) error
 }
 
+// ServiceConfig is the configuration for the email service.
+type ServiceConfig struct {
+	From    Address
+	BaseURL *url.URL
+}
+
 // Service provides the main functionality for sending emails.
 type Service struct {
-	from     Address
+	cfg      ServiceConfig
 	renderer Renderer
 	sender   Sender
 }
 
-func NewService(from Address, renderer Renderer, sender Sender) *Service {
+func NewService(renderer Renderer, sender Sender, cfg ServiceConfig) *Service {
 	return &Service{
-		from:     from,
+		cfg:      cfg,
 		renderer: renderer,
 		sender:   sender,
 	}
@@ -45,15 +52,23 @@ func (s *Service) Send(ctx context.Context, name string, recipient Address, data
 		bBuf bytes.Buffer
 	)
 
-	err := s.renderer.Render(&sBuf, name, ElementSubject, data)
+	viewData := struct {
+		Global any
+		View   any
+	}{
+		Global: s.cfg,
+		View:   data,
+	}
+
+	err := s.renderer.Render(&sBuf, name, ElementSubject, viewData)
 	if err != nil {
 		return err
 	}
 
-	err = s.renderer.Render(&bBuf, name, ElementBody, data)
+	err = s.renderer.Render(&bBuf, name, ElementBody, viewData)
 	if err != nil {
 		return err
 	}
 
-	return s.sender.Send(ctx, s.from, recipient, sBuf.String(), bBuf.String())
+	return s.sender.Send(ctx, s.cfg.From, recipient, sBuf.String(), bBuf.String())
 }

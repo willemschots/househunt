@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/gob"
 	"errors"
 	"fmt"
 	"io"
@@ -13,12 +14,16 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/gorilla/sessions"
 	"github.com/willemschots/househunt/assets"
 	"github.com/willemschots/househunt/internal"
 	"github.com/willemschots/househunt/internal/auth"
 	authdb "github.com/willemschots/househunt/internal/auth/db"
 	"github.com/willemschots/househunt/internal/db"
 	"github.com/willemschots/househunt/internal/db/migrate"
+	"github.com/willemschots/househunt/internal/email"
+	emailview "github.com/willemschots/househunt/internal/email/view"
 	"github.com/willemschots/househunt/internal/krypto"
 	"github.com/willemschots/househunt/internal/web"
 	"github.com/willemschots/househunt/internal/web/view"
@@ -84,12 +89,17 @@ func run(ctx context.Context, w io.Writer) int {
 		}
 	}
 
-	// Create encryptor.
-	encryptor, err := krypto.NewEncryptor(cfg.crypto.keys)
+	// Create DB encryptor.
+	encryptor, err := krypto.NewEncryptor(cfg.db.encryptionKeys)
 	if err != nil {
 		logger.Error("failed to create encryptor", "error", err)
 		return 1
 	}
+
+	// Create emailer.
+	emailRenderer := emailview.NewFSRenderer(assets.EmailFS)
+	logSender := email.NewLogSender(logger)
+	emailer := email.NewService(emailRenderer, logSender, cfg.email)
 
 	// Create authentication store and service.
 	authStore := authdb.New(dbh.write, dbh.read, encryptor, cfg.db.blindIndexSalt)
@@ -98,16 +108,30 @@ func run(ctx context.Context, w io.Writer) int {
 		logger.Error("authentication service error", "error", err)
 	}
 
-	authSvc, err := auth.NewService(authStore, nil, authErrHandler, auth.ServiceConfig{})
+	authSvc, err := auth.NewService(authStore, emailer, authErrHandler, cfg.auth)
 	if err != nil {
 		logger.Error("failed to create auth service", "error", err)
 		return 1
 	}
 
+	// Create cookie store to store sessions.
+	keysAsBytes := make([][]byte, len(cfg.http.cookieKeys))
+	for i, key := range cfg.http.cookieKeys {
+		keysAsBytes[i] = key.SecretValue()
+	}
+	sessionStore := sessions.NewCookieStore(keysAsBytes...)
+	sessionStore.Options.Secure = cfg.http.secureCookie
+	sessionStore.Options.HttpOnly = true
+	sessionStore.MaxAge(7 * 24 * 60 * 60) // 1 week
+
+	// Register UUID type for inclusion in the session values.
+	gob.Register(uuid.UUID{})
+
 	serverDeps := &web.ServerDeps{
 		Logger:       logger,
 		ViewRenderer: view.NewFSRenderer(assets.TemplateFS),
 		AuthService:  authSvc,
+		SessionStore: sessionStore,
 	}
 
 	srv := &http.Server{

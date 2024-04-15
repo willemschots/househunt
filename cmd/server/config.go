@@ -4,12 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/willemschots/househunt/internal/auth"
+	"github.com/willemschots/househunt/internal/email"
 	"github.com/willemschots/househunt/internal/krypto"
 )
 
@@ -20,30 +22,36 @@ type httpConfig struct {
 	writeTimeout    time.Duration
 	idleTimeout     time.Duration
 	shutdownTimeout time.Duration
+	// cookieKeys are the pairs of keys used to authenticate and encrypt cookies.
+	// see https://pkg.go.dev/github.com/gorilla/sessions for more information on how these
+	// are interpreted.
+	cookieKeys   []krypto.Key
+	secureCookie bool
 }
 
 // dbConfig is the database configuration.
 type dbConfig struct {
 	file           string
 	migrate        bool
+	encryptionKeys []krypto.Key
 	blindIndexSalt krypto.Key
-}
-
-// cryptoConfig is the encryption configuration.
-type cryptoConfig struct {
-	keys []krypto.Key
 }
 
 // config is the configuration for the server command.
 type config struct {
-	http   httpConfig
-	db     dbConfig
-	crypto cryptoConfig
-	auth   auth.ServiceConfig
+	http  httpConfig
+	db    dbConfig
+	auth  auth.ServiceConfig
+	email email.ServiceConfig
 }
 
 // defaultConfig returns a config with sane default values.
 func defaultConfig() config {
+	baseURL, err := url.Parse("http://localhost:8888")
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse default base URL: %v", err))
+	}
+
 	return config{
 		http: httpConfig{
 			addr:            ":8888",
@@ -51,6 +59,7 @@ func defaultConfig() config {
 			writeTimeout:    time.Second * 10,
 			idleTimeout:     time.Second * 120,
 			shutdownTimeout: time.Second * 15,
+			secureCookie:    true,
 		},
 		db: dbConfig{
 			file:    "househunt.db",
@@ -60,16 +69,26 @@ func defaultConfig() config {
 			WorkerTimeout: time.Second * 30,
 			TokenExpiry:   time.Minute * 30,
 		},
+		email: email.ServiceConfig{
+			BaseURL: baseURL,
+		},
 	}
 }
 
 type envVariable struct {
+	// required indicates if that an env variable must be provided by the user.
 	required bool
-	mapFunc  func(v string, c *config) error
+	// mapFunc maps the env variable value to the config struct.
+	mapFunc func(v string, c *config) error
 }
 
 // envMap maps environment variable names to fields in the config struct.
 var envMap = map[string]envVariable{
+	"BASE_URL": {
+		mapFunc: func(v string, c *config) error {
+			return confURL(v, c.email.BaseURL)
+		},
+	},
 	"HTTP_ADDR": {
 		mapFunc: func(v string, c *config) error {
 			c.http.addr = v
@@ -96,6 +115,17 @@ var envMap = map[string]envVariable{
 			return confDuration(v, &c.http.shutdownTimeout, 0, math.MaxInt64)
 		},
 	},
+	"HTTP_COOKIE_KEYS": {
+		required: true,
+		mapFunc: func(v string, c *config) error {
+			return confSliceOf(v, &c.http.cookieKeys, krypto.ParseKey, 2, math.MaxInt64)
+		},
+	},
+	"HTTP_SECURE_COOKIE": {
+		mapFunc: func(v string, c *config) error {
+			return confBool(v, &c.http.secureCookie)
+		},
+	},
 	"DB_FILENAME": {
 		mapFunc: func(v string, c *config) error {
 			return confString(v, &c.db.file, 1, math.MaxInt64)
@@ -112,10 +142,10 @@ var envMap = map[string]envVariable{
 			return confCryptoKey(v, &c.db.blindIndexSalt)
 		},
 	},
-	"CRYPTO_KEYS": {
+	"DB_ENCRYPTION_KEYS": {
 		required: true,
 		mapFunc: func(v string, c *config) error {
-			return confSliceOf(v, &c.crypto.keys, krypto.ParseKey, 1, math.MaxInt64)
+			return confSliceOf(v, &c.db.encryptionKeys, krypto.ParseKey, 2, math.MaxInt64)
 		},
 	},
 	"AUTH_WORKER_TIMEOUT": {
@@ -126,6 +156,12 @@ var envMap = map[string]envVariable{
 	"AUTH_TOKEN_EXPIRY": {
 		mapFunc: func(v string, c *config) error {
 			return confDuration(v, &c.auth.TokenExpiry, 0, math.MaxInt64)
+		},
+	},
+	"EMAIL_FROM": {
+		required: true,
+		mapFunc: func(v string, c *config) error {
+			return confEmailAddress(v, &c.email.From)
 		},
 	},
 }
@@ -157,6 +193,22 @@ func configFromEnv() (config, error) {
 	return c, errSum
 }
 
+// confDuration attempts to parse v into tgt as an URL.
+func confURL(v string, tgt *url.URL) error {
+	u, err := url.Parse(v)
+	if err != nil {
+		return err
+	}
+
+	if u.Scheme == "" || u.Host == "" {
+		return fmt.Errorf("URL %s is missing scheme or host", v)
+	}
+
+	*tgt = *u
+
+	return nil
+}
+
 // confDuration attempts to parse v into tgt and checks if the result is in
 // the provided range (inclusive).
 func confDuration(v string, tgt *time.Duration, min, max time.Duration) error {
@@ -184,6 +236,7 @@ func confString(v string, tgt *string, minLen, maxLen int) error {
 	return nil
 }
 
+// confDuration attempts to parse v into tgt as a bool.
 func confBool(v string, tgt *bool) error {
 	b, err := strconv.ParseBool(v)
 	if err != nil {
@@ -195,6 +248,7 @@ func confBool(v string, tgt *bool) error {
 	return nil
 }
 
+// confDuration attempts to parse v into tgt as a crypto key.
 func confCryptoKey(v string, tgt *krypto.Key) error {
 	k, err := krypto.ParseKey(v)
 	if err != nil {
@@ -202,6 +256,18 @@ func confCryptoKey(v string, tgt *krypto.Key) error {
 	}
 
 	*tgt = k
+
+	return nil
+}
+
+// confDuration attempts to parse v into tgt as an email address.
+func confEmailAddress(v string, tgt *email.Address) error {
+	email, err := email.ParseAddress(v)
+	if err != nil {
+		return err
+	}
+
+	*tgt = email
 
 	return nil
 }

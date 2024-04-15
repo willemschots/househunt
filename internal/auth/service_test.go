@@ -295,13 +295,13 @@ func Test_Service_Authenticate(t *testing.T) {
 		credentials, tok := st.registerUser()
 		st.activateUser(tok)
 
-		authenticated, err := st.svc.Authenticate(context.Background(), credentials)
+		user, err := st.svc.Authenticate(context.Background(), credentials)
 		if err != nil {
 			t.Fatalf("failed to authenticate: %v", err)
 		}
 
-		if !authenticated {
-			t.Fatalf("expected authentication to succeed")
+		if user.ID == uuid.Nil || user.Email != credentials.Email {
+			t.Fatalf("unexpected user: %v", user)
 		}
 
 		// assert no async errors were reported.
@@ -316,13 +316,9 @@ func Test_Service_Authenticate(t *testing.T) {
 
 		credentials.Password = must(auth.ParsePassword("wrongPassword"))
 
-		authenticated, err := st.svc.Authenticate(context.Background(), credentials)
-		if err != nil {
-			t.Fatalf("failed to authenticate: %v", err)
-		}
-
-		if authenticated {
-			t.Fatalf("expected authentication to fail")
+		_, err := st.svc.Authenticate(context.Background(), credentials)
+		if !errors.Is(err, auth.ErrInvalidCredentials) {
+			t.Fatalf("expected error %v, got %v (via errors.Is)", auth.ErrInvalidCredentials, err)
 		}
 
 		// assert no async errors were reported.
@@ -337,13 +333,9 @@ func Test_Service_Authenticate(t *testing.T) {
 
 		credentials.Email = must(email.ParseAddress("jacob@example.com"))
 
-		authenticated, err := st.svc.Authenticate(context.Background(), credentials)
-		if err != nil {
-			t.Fatalf("failed to authenticate: %v", err)
-		}
-
-		if authenticated {
-			t.Fatalf("expected authentication to fail")
+		_, err := st.svc.Authenticate(context.Background(), credentials)
+		if !errors.Is(err, auth.ErrInvalidCredentials) {
+			t.Fatalf("expected error %v, got %v (via errors.Is)", auth.ErrInvalidCredentials, err)
 		}
 
 		// assert no async errors were reported.
@@ -355,13 +347,9 @@ func Test_Service_Authenticate(t *testing.T) {
 		st := newServiceTest(t)
 		credentials, _ := st.registerUser()
 
-		authenticated, err := st.svc.Authenticate(context.Background(), credentials)
-		if err != nil {
-			t.Fatalf("failed to authenticate: %v", err)
-		}
-
-		if authenticated {
-			t.Fatalf("expected authentication to fail")
+		_, err := st.svc.Authenticate(context.Background(), credentials)
+		if !errors.Is(err, auth.ErrInvalidCredentials) {
+			t.Fatalf("expected error %v, got %v (via errors.Is)", auth.ErrInvalidCredentials, err)
 		}
 
 		// assert no async errors were reported.
@@ -845,12 +833,15 @@ func (st *svcTest) resetPassword(np auth.NewPassword) {
 }
 
 func (st *svcTest) authenticate(credentials auth.Credentials) bool {
-	authenticated, err := st.svc.Authenticate(context.Background(), credentials)
+	_, err := st.svc.Authenticate(context.Background(), credentials)
 	if err != nil {
+		if errors.Is(err, auth.ErrInvalidCredentials) {
+			return false
+		}
 		st.t.Fatalf("failed to authenticate: %v", err)
 	}
 
-	return authenticated
+	return true
 }
 
 type errList struct {

@@ -2,28 +2,37 @@ package main
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/willemschots/househunt/internal/email"
 	"github.com/willemschots/househunt/internal/krypto"
 )
 
 func requiredEnv() map[string]string {
 	return map[string]string{
+		"HTTP_COOKIE_KEYS":    "568554094ec040ab8a6b3e6d7cc138b0dc855f39ba1aeb2ffc903f7260b3a452,d503685b5e0848dcd1026711a5d92e8a087dfaffa489fb563e0de73db2f2476c",
 		"DB_BLIND_INDEX_SALT": "b61115eeb1bdf0847f1d7ea978c7da71e3b31361f7450bc8aa12566a16b7b03f",
-		"CRYPTO_KEYS":         "2b671594b775f371eab4050b4d58326682df6b1a6cc2e886717b1a26b4d6c45d",
+		"DB_ENCRYPTION_KEYS":  "2b671594b775f371eab4050b4d58326682df6b1a6cc2e886717b1a26b4d6c45d",
+		"EMAIL_FROM":          "househunt@example.com",
 	}
 }
 
 func newConfig(mf func(*config)) config {
 	c := defaultConfig()
+	c.http.cookieKeys = []krypto.Key{
+		must(krypto.ParseKey("568554094ec040ab8a6b3e6d7cc138b0dc855f39ba1aeb2ffc903f7260b3a452")),
+		must(krypto.ParseKey("d503685b5e0848dcd1026711a5d92e8a087dfaffa489fb563e0de73db2f2476c")),
+	}
 	c.db.blindIndexSalt = must(krypto.ParseKey("b61115eeb1bdf0847f1d7ea978c7da71e3b31361f7450bc8aa12566a16b7b03f"))
-	c.crypto.keys = []krypto.Key{
+	c.db.encryptionKeys = []krypto.Key{
 		must(krypto.ParseKey("2b671594b775f371eab4050b4d58326682df6b1a6cc2e886717b1a26b4d6c45d")),
 	}
+	c.email.From = must(email.ParseAddress("househunt@example.com"))
 
 	if mf != nil {
 		mf(&c)
@@ -54,6 +63,13 @@ func TestConfigFromEnv(t *testing.T) {
 		val string
 		mf  func(*config) // modify default config to create wanted config.
 	}{
+		"ok, non-default BASE_URL": {
+			key: "BASE_URL",
+			val: "https://example.com:9999",
+			mf: func(c *config) {
+				c.email.BaseURL = must(url.Parse("https://example.com:9999"))
+			},
+		},
 		"ok, non-default HTTP_ADDR": {
 			key: "HTTP_ADDR", val: "localhost:8080", mf: func(c *config) { c.http.addr = "localhost:8080" },
 		},
@@ -69,6 +85,23 @@ func TestConfigFromEnv(t *testing.T) {
 		"ok, non-default HTTP_SHUTDOWN_TIMEOUT": {
 			key: "HTTP_SHUTDOWN_TIMEOUT", val: "404ms", mf: func(c *config) { c.http.shutdownTimeout = 404 * time.Millisecond },
 		},
+		"ok, other HTTP_COOKIE_KEYS": {
+			key: "HTTP_COOKIE_KEYS",
+			val: "04017690e77c6a19671178e1950c7519389b58f6ffb8dcf53b2acfcaca398778,ddadbbe8b69c757875b80b8522a40da8ed882a1a368160247ef769acad61f88a",
+			mf: func(c *config) {
+				c.http.cookieKeys = []krypto.Key{
+					must(krypto.ParseKey("04017690e77c6a19671178e1950c7519389b58f6ffb8dcf53b2acfcaca398778")),
+					must(krypto.ParseKey("ddadbbe8b69c757875b80b8522a40da8ed882a1a368160247ef769acad61f88a")),
+				}
+			},
+		},
+		"ok, non-default HTTP_SECURE_COOKIE": {
+			key: "HTTP_SECURE_COOKIE",
+			val: "false",
+			mf: func(c *config) {
+				c.http.secureCookie = false
+			},
+		},
 		"ok, non-default DB_FILENAME": {
 			key: "DB_FILENAME", val: "test.db", mf: func(c *config) { c.db.file = "test.db" },
 		},
@@ -82,11 +115,11 @@ func TestConfigFromEnv(t *testing.T) {
 				c.db.blindIndexSalt = must(krypto.ParseKey("d1d92ba246dc05e7c1e935dd52d02272a218c7ea2ed514d1f68e7baa5f861ddd"))
 			},
 		},
-		"ok, multiple CRYPTO_KEYS": {
-			key: "CRYPTO_KEYS",
+		"ok, multiple DB_ENCRYPTION_KEYS": {
+			key: "DB_ENCRYPTION_KEYS",
 			val: "2b671594b775f371eab4050b4d58326682df6b1a6cc2e886717b1a26b4d6c45d,cf55b868d8c7a640265365910093113edce9b6c9226f3bd7c87987d23062d421",
 			mf: func(c *config) {
-				c.crypto.keys = []krypto.Key{
+				c.db.encryptionKeys = []krypto.Key{
 					must(krypto.ParseKey("2b671594b775f371eab4050b4d58326682df6b1a6cc2e886717b1a26b4d6c45d")),
 					must(krypto.ParseKey("cf55b868d8c7a640265365910093113edce9b6c9226f3bd7c87987d23062d421")),
 				}
@@ -97,6 +130,13 @@ func TestConfigFromEnv(t *testing.T) {
 		},
 		"ok, non-default AUTH_TOKEN_EXPIRY": {
 			key: "AUTH_TOKEN_EXPIRY", val: "51m", mf: func(c *config) { c.auth.TokenExpiry = 51 * time.Minute },
+		},
+		"ok, other EMAIL_FROM": {
+			key: "EMAIL_FROM",
+			val: "test@example.com",
+			mf: func(c *config) {
+				c.email.From = must(email.ParseAddress("test@example.com"))
+			},
 		},
 	}
 
@@ -126,17 +166,21 @@ func TestConfigFromEnv(t *testing.T) {
 		key string
 		val string
 	}{
+		"fail, no host in BASE_URL":            {"BASE_URL", "/just-a-path"},
 		"fail, negative HTTP_READ_TIMEOUT":     {"HTTP_READ_TIMEOUT", "-1ms"},
 		"fail, negative HTTP_WRITE_TIMEOUT":    {"HTTP_WRITE_TIMEOUT", "-1ms"},
 		"fail, negative HTTP_IDLE_TIMEOUT":     {"HTTP_IDLE_TIMEOUT", "-1ms"},
 		"fail, negative HTTP_SHUTDOWN_TIMEOUT": {"HTTP_SHUTDOWN_TIMEOUT", "-1ms"},
+		"fail, invalid HTTP_COOKIE_KEYS":       {"HTTP_COOKIE_KEYS", "abc"},
+		"fail, invalid HTTP_SECURE_COOKIE":     {"HTTP_SECURE_COOKIE", "abc"},
 		"fail, empty DB_FILENAME":              {"DB_FILENAME", ""},
 		"fail, invalid DB_MIGRATE":             {"DB_MIGRATE", "no!"},
 		"fail, invalid DB_BLIND_INDEX_SALT":    {"DB_BLIND_INDEX_SALT", "abc"},
-		"fail, empty CRYPTO_KEYS":              {"CRYPTO_KEYS", ""},
-		"fail, invalid CRYPTO_KEYS":            {"CRYPTO_KEYS", "abc"},
+		"fail, empty DB_ENCRYPTION_KEYS":       {"DB_ENCRYPTION_KEYS", ""},
+		"fail, invalid DB_ENCRYPTION_KEYS":     {"DB_ENCRYPTION_KEYS", "abc"},
 		"fail, negative AUTH_WORKER_TIMEOUT":   {"AUTH_WORKER_TIMEOUT", "-1ms"},
 		"fail, negative AUTH_TOKEN_EXPIRY":     {"AUTH_TOKEN_EXPIRY", "-1ms"},
+		"fail, invalid EMAIL_FROM":             {"EMAIL_FROM", "@@"},
 	}
 
 	for name, tc := range invalid {

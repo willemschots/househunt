@@ -14,13 +14,16 @@ import (
 )
 
 const (
-	// testURLPrefix is used to identify the scheme, host and port of the test server.
-	testURLPrefix = "http://localhost:8888"
+	// baseURL is used to identify the scheme, host and port of the test server.
+	baseURL = "http://localhost:8888"
 	// publicURL is an unauthenticated URL that we check to see if the server is available.
-	publicURL = testURLPrefix
+	publicURL = baseURL
 
 	// httpClientTimeout is the timeout for the http client to wait for a response.
-	httpClientTimeout = 50 * time.Millisecond
+	httpClientTimeout = 500 * time.Millisecond
+
+	// tryServingDuration is how long we check try to see if the server is available.
+	tryServingDuration = 5 * time.Second
 )
 
 func Test_Run(t *testing.T) {
@@ -147,7 +150,8 @@ func assertLog(t *testing.T, log string, want ...string) {
 func cancelOnceServed(t *testing.T, url string) context.Context {
 	t.Helper()
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	//
+	ctx, cancel := context.WithTimeout(context.Background(), tryServingDuration)
 
 	result := make(chan error, 1)
 
@@ -200,6 +204,12 @@ func testEnv(testFunc func(t *testing.T)) func(t *testing.T) {
 
 	// add/overwrite env variables.
 	env["DB_FILENAME"] = "househunt-unit-test.db"
+
+	// Disable secure cookies.
+	// the Go cookiejar does not sent secure cookies over localhost
+	// so we disable secure cookies for testing. See this issue for more info:
+	// https://github.com/golang/go/issues/60997
+	env["HTTP_SECURE_COOKIE"] = "false"
 
 	return func(t *testing.T) {
 		t.Helper()

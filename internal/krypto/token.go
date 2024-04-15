@@ -53,3 +53,12 @@ func (t Token) String() string {
 func (t Token) LogValue() slog.Value {
 	return slog.StringValue(SecretMarker)
 }
+
+func (t *Token) UnmarshalText(text []byte) error {
+	token, err := ParseToken(string(text))
+	if err != nil {
+		return err
+	}
+	*t = token
+	return nil
+}
