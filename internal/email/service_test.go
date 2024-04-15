@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -20,7 +21,12 @@ func Test_SendEmail(t *testing.T) {
 		logger := slog.New(slog.NewTextHandler(&buf, nil))
 		sender := email.NewLogSender(logger)
 
-		svc := email.NewService(email.Address("alice@example.com"), renderer, sender)
+		cfg := email.ServiceConfig{
+			From:    must(email.ParseAddress("alice@example.com")),
+			BaseURL: must(url.Parse("http://example.com")),
+		}
+
+		svc := email.NewService(renderer, sender, cfg)
 
 		data := struct {
 			Name    string
@@ -47,4 +53,12 @@ func Test_SendEmail(t *testing.T) {
 			}
 		}
 	})
+}
+
+func must[T any](v T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+
+	return v
 }

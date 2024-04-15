@@ -4,6 +4,6 @@ Before we can activate your account and allow you to log in, we need to verify y
 
 Please click the following link to confirm your email address:
 
-https://examplego.com/user-activations?id={{.ID}}&token={{ .Token }}
+{{ .Global.BaseURL }}/user-activations?id={{ .View.ID }}&token={{ .View.Token }}
 
 {{ end }}

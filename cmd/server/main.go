@@ -96,7 +96,7 @@ func run(ctx context.Context, w io.Writer) int {
 	// Create emailer.
 	emailRenderer := emailview.NewFSRenderer(assets.EmailFS)
 	logSender := email.NewLogSender(logger)
-	emailer := email.NewService(cfg.email.from, emailRenderer, logSender)
+	emailer := email.NewService(emailRenderer, logSender, cfg.email)
 
 	// Create authentication store and service.
 	authStore := authdb.New(dbh.write, dbh.read, encryptor, cfg.db.blindIndexSalt)

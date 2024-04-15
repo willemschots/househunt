@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -35,22 +36,22 @@ type cryptoConfig struct {
 	keys []krypto.Key
 }
 
-// emailConfig is the email configuration.
-type emailConfig struct {
-	from email.Address
-}
-
 // config is the configuration for the server command.
 type config struct {
 	http   httpConfig
 	db     dbConfig
 	crypto cryptoConfig
 	auth   auth.ServiceConfig
-	email  emailConfig
+	email  email.ServiceConfig
 }
 
 // defaultConfig returns a config with sane default values.
 func defaultConfig() config {
+	baseURL, err := url.Parse("http://localhost:8888")
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse default base URL: %v", err))
+	}
+
 	return config{
 		http: httpConfig{
 			addr:            ":8888",
@@ -67,16 +68,26 @@ func defaultConfig() config {
 			WorkerTimeout: time.Second * 30,
 			TokenExpiry:   time.Minute * 30,
 		},
+		email: email.ServiceConfig{
+			BaseURL: baseURL,
+		},
 	}
 }
 
 type envVariable struct {
+	// required indicates if that an env variable must be provided by the user.
 	required bool
-	mapFunc  func(v string, c *config) error
+	// mapFunc maps the env variable value to the config struct.
+	mapFunc func(v string, c *config) error
 }
 
 // envMap maps environment variable names to fields in the config struct.
 var envMap = map[string]envVariable{
+	"BASE_URL": {
+		mapFunc: func(v string, c *config) error {
+			return confURL(v, c.email.BaseURL)
+		},
+	},
 	"HTTP_ADDR": {
 		mapFunc: func(v string, c *config) error {
 			c.http.addr = v
@@ -138,7 +149,7 @@ var envMap = map[string]envVariable{
 	"EMAIL_FROM": {
 		required: true,
 		mapFunc: func(v string, c *config) error {
-			return confEmailAddress(v, &c.email.from)
+			return confEmailAddress(v, &c.email.From)
 		},
 	},
 }
@@ -170,6 +181,22 @@ func configFromEnv() (config, error) {
 	return c, errSum
 }
 
+// confDuration attempts to parse v into tgt as an URL.
+func confURL(v string, tgt *url.URL) error {
+	u, err := url.Parse(v)
+	if err != nil {
+		return err
+	}
+
+	if u.Scheme == "" || u.Host == "" {
+		return fmt.Errorf("URL %s is missing scheme or host", v)
+	}
+
+	*tgt = *u
+
+	return nil
+}
+
 // confDuration attempts to parse v into tgt and checks if the result is in
 // the provided range (inclusive).
 func confDuration(v string, tgt *time.Duration, min, max time.Duration) error {
@@ -197,6 +224,7 @@ func confString(v string, tgt *string, minLen, maxLen int) error {
 	return nil
 }
 
+// confDuration attempts to parse v into tgt as a bool.
 func confBool(v string, tgt *bool) error {
 	b, err := strconv.ParseBool(v)
 	if err != nil {
@@ -208,6 +236,7 @@ func confBool(v string, tgt *bool) error {
 	return nil
 }
 
+// confDuration attempts to parse v into tgt as a crypto key.
 func confCryptoKey(v string, tgt *krypto.Key) error {
 	k, err := krypto.ParseKey(v)
 	if err != nil {
@@ -219,6 +248,7 @@ func confCryptoKey(v string, tgt *krypto.Key) error {
 	return nil
 }
 
+// confDuration attempts to parse v into tgt as an email address.
 func confEmailAddress(v string, tgt *email.Address) error {
 	email, err := email.ParseAddress(v)
 	if err != nil {

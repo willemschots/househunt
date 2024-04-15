@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"reflect"
 	"strings"
@@ -26,7 +27,7 @@ func newConfig(mf func(*config)) config {
 	c.crypto.keys = []krypto.Key{
 		must(krypto.ParseKey("2b671594b775f371eab4050b4d58326682df6b1a6cc2e886717b1a26b4d6c45d")),
 	}
-	c.email.from = must(email.ParseAddress("househunt@example.com"))
+	c.email.From = must(email.ParseAddress("househunt@example.com"))
 
 	if mf != nil {
 		mf(&c)
@@ -57,6 +58,13 @@ func TestConfigFromEnv(t *testing.T) {
 		val string
 		mf  func(*config) // modify default config to create wanted config.
 	}{
+		"ok, non-default BASE_URL": {
+			key: "BASE_URL",
+			val: "https://example.com:9999",
+			mf: func(c *config) {
+				c.email.BaseURL = must(url.Parse("https://example.com:9999"))
+			},
+		},
 		"ok, non-default HTTP_ADDR": {
 			key: "HTTP_ADDR", val: "localhost:8080", mf: func(c *config) { c.http.addr = "localhost:8080" },
 		},
@@ -105,7 +113,7 @@ func TestConfigFromEnv(t *testing.T) {
 			key: "EMAIL_FROM",
 			val: "test@example.com",
 			mf: func(c *config) {
-				c.email.from = must(email.ParseAddress("test@example.com"))
+				c.email.From = must(email.ParseAddress("test@example.com"))
 			},
 		},
 	}
@@ -136,6 +144,7 @@ func TestConfigFromEnv(t *testing.T) {
 		key string
 		val string
 	}{
+		"fail, no host in BASE_URL":            {"BASE_URL", "/just-a-path"},
 		"fail, negative HTTP_READ_TIMEOUT":     {"HTTP_READ_TIMEOUT", "-1ms"},
 		"fail, negative HTTP_WRITE_TIMEOUT":    {"HTTP_WRITE_TIMEOUT", "-1ms"},
 		"fail, negative HTTP_IDLE_TIMEOUT":     {"HTTP_IDLE_TIMEOUT", "-1ms"},

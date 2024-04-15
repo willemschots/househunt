@@ -216,7 +216,7 @@ func waitAndCaptureActivationURL(t *testing.T, logs *safeBuffer, addr string) st
 
 func extractActivationURL(s string) (string, bool) {
 	s = strings.ReplaceAll(s, `\n`, " ")
-	r := regexp.MustCompile(`\b(https?)://\S+`)
+	r := regexp.MustCompile(`\b(https?)://localhost:8888/user-activations\S+`)
 	result := r.FindString(s)
 	if result == "" {
 		return "", false
