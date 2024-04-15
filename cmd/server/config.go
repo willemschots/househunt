@@ -25,7 +25,8 @@ type httpConfig struct {
 	// cookieKeys are the pairs of keys used to authenticate and encrypt cookies.
 	// see https://pkg.go.dev/github.com/gorilla/sessions for more information on how these
 	// are interpreted.
-	cookieKeys []krypto.Key
+	cookieKeys   []krypto.Key
+	secureCookie bool
 }
 
 // dbConfig is the database configuration.
@@ -58,6 +59,7 @@ func defaultConfig() config {
 			writeTimeout:    time.Second * 10,
 			idleTimeout:     time.Second * 120,
 			shutdownTimeout: time.Second * 15,
+			secureCookie:    true,
 		},
 		db: dbConfig{
 			file:    "househunt.db",
@@ -117,6 +119,11 @@ var envMap = map[string]envVariable{
 		required: true,
 		mapFunc: func(v string, c *config) error {
 			return confSliceOf(v, &c.http.cookieKeys, krypto.ParseKey, 2, math.MaxInt64)
+		},
+	},
+	"HTTP_SECURE_COOKIE": {
+		mapFunc: func(v string, c *config) error {
+			return confBool(v, &c.http.secureCookie)
 		},
 	},
 	"DB_FILENAME": {

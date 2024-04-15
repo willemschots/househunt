@@ -95,6 +95,13 @@ func TestConfigFromEnv(t *testing.T) {
 				}
 			},
 		},
+		"ok, non-default HTTP_SECURE_COOKIE": {
+			key: "HTTP_SECURE_COOKIE",
+			val: "false",
+			mf: func(c *config) {
+				c.http.secureCookie = false
+			},
+		},
 		"ok, non-default DB_FILENAME": {
 			key: "DB_FILENAME", val: "test.db", mf: func(c *config) { c.db.file = "test.db" },
 		},
@@ -165,6 +172,7 @@ func TestConfigFromEnv(t *testing.T) {
 		"fail, negative HTTP_IDLE_TIMEOUT":     {"HTTP_IDLE_TIMEOUT", "-1ms"},
 		"fail, negative HTTP_SHUTDOWN_TIMEOUT": {"HTTP_SHUTDOWN_TIMEOUT", "-1ms"},
 		"fail, invalid HTTP_COOKIE_KEYS":       {"HTTP_COOKIE_KEYS", "abc"},
+		"fail, invalid HTTP_SECURE_COOKIE":     {"HTTP_SECURE_COOKIE", "abc"},
 		"fail, empty DB_FILENAME":              {"DB_FILENAME", ""},
 		"fail, invalid DB_MIGRATE":             {"DB_MIGRATE", "no!"},
 		"fail, invalid DB_BLIND_INDEX_SALT":    {"DB_BLIND_INDEX_SALT", "abc"},

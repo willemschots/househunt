@@ -7,15 +7,10 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/google/uuid"
 	"github.com/gorilla/schema"
 	"github.com/gorilla/sessions"
 	"github.com/willemschots/househunt/internal/auth"
 	"github.com/willemschots/househunt/internal/errorz"
-)
-
-const (
-	AuthSession = "hh-auth"
 )
 
 // ViewRenderer renders named views with the given data.
@@ -35,6 +30,7 @@ type Server struct {
 	deps    *ServerDeps
 	mux     *http.ServeMux
 	decoder *schema.Decoder
+	handler http.Handler
 }
 
 func NewServer(deps *ServerDeps) *Server {
@@ -44,31 +40,37 @@ func NewServer(deps *ServerDeps) *Server {
 		decoder: schema.NewDecoder(),
 	}
 
-	s.mux.Handle("GET /{$}", s.staticHandler("hello-world"))
+	s.public("GET /{$}", s.staticHandler("hello-world"))
 
 	// Register user endpoints.
-	s.mux.Handle("GET /register", s.staticHandler("register-user"))
-	s.mux.Handle("POST /register", mapRequest(s, deps.AuthService.RegisterUser))
+	s.publicOnly("GET /register", s.staticHandler("register-user"))
+	s.publicOnly("POST /register", mapRequest(s, deps.AuthService.RegisterUser))
 
 	// Activate user endpoints.
 	forwardRawToken := func(ctx context.Context, token auth.EmailTokenRaw) (auth.EmailTokenRaw, error) {
 		return token, nil
 	}
 
-	s.mux.Handle("GET /user-activations", mapBoth(s, forwardRawToken).response(func(r result[auth.EmailTokenRaw, auth.EmailTokenRaw]) error {
+	s.publicOnly("GET /user-activations", mapBoth(s, forwardRawToken).response(func(r result[auth.EmailTokenRaw, auth.EmailTokenRaw]) error {
 		return s.writeView(r.w, "activate-user", r.out)
 	}))
 
-	s.mux.Handle("POST /user-activations", mapRequest(s, deps.AuthService.ActivateUser))
+	s.publicOnly("POST /user-activations", mapRequest(s, deps.AuthService.ActivateUser))
 
 	// Login user endpoints
-	s.mux.Handle("GET /login", s.staticHandler("login-user"))
-	s.mux.Handle("POST /login", mapBoth(s, deps.AuthService.Authenticate).response(func(r result[auth.Credentials, auth.User]) error {
-		// Authenticated.
-		// TODO: Refresh CSRF token once implemented.
-		// TODO: Redirect to dashboard.
-		return s.writeAuthSession(r.w, r.r, r.out.ID)
+	s.publicOnly("GET /login", s.staticHandler("login-user"))
+	s.publicOnly("POST /login", mapBoth(s, deps.AuthService.Authenticate).response(func(r result[auth.Credentials, auth.User]) error {
+		// If we get here, the user has been authenticated.
+		// TODO: Refresh CSRF token once added.
+		err := s.writeAuthSession(r.w, r.r, r.out.ID)
+		if err != nil {
+			return err
+		}
+		http.Redirect(r.w, r.r, "/dashboard", http.StatusFound)
+		return nil
 	}))
+
+	s.loggedIn("GET /dashboard", s.staticHandler("dashboard"))
 
 	//s.mux.Handle("GET /login")
 
@@ -90,11 +92,14 @@ func NewServer(deps *ServerDeps) *Server {
 	// TODO: GET /password-reset-requests
 	//mux.Handle("POST /password-resets", HandleIn(s.AuthService.ResetPassword))
 
+	// Wrap the mux in global middleware.
+	s.handler = s.session(s.mux)
+
 	return s
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	s.mux.ServeHTTP(w, r)
+	s.handler.ServeHTTP(w, r)
 }
 
 func (s *Server) staticHandler(name string) http.HandlerFunc {
@@ -112,39 +117,13 @@ func (s *Server) writeView(w http.ResponseWriter, name string, data any) error {
 	return s.deps.ViewRenderer.Render(w, name, data)
 }
 
-func (s *Server) writeAuthSession(w http.ResponseWriter, r *http.Request, userID uuid.UUID) error {
-	session, err := s.deps.SessionStore.Get(r, AuthSession)
-	if err != nil {
-		return err
-	}
-
-	if !session.IsNew {
-		return errors.New("non-new session")
-	}
-
-	session.Values["userID"] = userID
-	return s.deps.SessionStore.Save(r, w, session)
-}
-
-func (s *Server) readAuthSession(r *http.Request) (uuid.UUID, error) {
-	session, err := s.deps.SessionStore.Get(r, AuthSession)
-	if err != nil {
-		return uuid.Nil, err
-	}
-
-	if session.IsNew {
-		return uuid.Nil, errorz.ErrNotFound
-	}
-
-	userID, ok := session.Values["userID"].(uuid.UUID)
-	if !ok {
-		return uuid.Nil, errors.New("invalid user ID")
-	}
-
-	return userID, nil
-}
-
 func (s *Server) handleError(w http.ResponseWriter, err error) {
-	// TODO: Properly handle error.
+	s.deps.Logger.Error("server error", "error", err)
+	// TODO: Properly handle other errors.
+	if errors.Is(err, errorz.ErrNotFound) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+
 	panic(err)
 }

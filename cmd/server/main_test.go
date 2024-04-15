@@ -205,6 +205,12 @@ func testEnv(testFunc func(t *testing.T)) func(t *testing.T) {
 	// add/overwrite env variables.
 	env["DB_FILENAME"] = "househunt-unit-test.db"
 
+	// Disable secure cookies.
+	// the Go cookiejar does not sent secure cookies over localhost
+	// so we disable secure cookies for testing. See this issue for more info:
+	// https://github.com/golang/go/issues/60997
+	env["HTTP_SECURE_COOKIE"] = "false"
+
 	return func(t *testing.T) {
 		t.Helper()
 

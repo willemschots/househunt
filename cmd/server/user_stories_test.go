@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"regexp"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"golang.org/x/net/html"
+	"golang.org/x/net/publicsuffix"
 )
 
 // Test_UserStories tests the user stories of the application.
@@ -21,7 +23,7 @@ func Test_UserStories(t *testing.T) {
 		// runAppForTest waits for the app to be up and stops it after the test finishes.
 		logs := runAppForTest(t)
 
-		c := newClient()
+		c := newClient(t)
 
 		t.Run("register a new account", func(t *testing.T) {
 			// first view the form.
@@ -62,6 +64,10 @@ func Test_UserStories(t *testing.T) {
 			c.mustSubmitForm(t, form, assertStatusCode(t, http.StatusOK))
 		})
 
+		t.Run("verify I can't access the dashboard", func(t *testing.T) {
+			c.mustGetBody(t, "/dashboard", assertStatusCode(t, http.StatusNotFound))
+		})
+
 		t.Run("login to my now active account", func(t *testing.T) {
 			// first view the login form.
 			body := c.mustGetBody(t, "/login", assertStatusCode(t, http.StatusOK))
@@ -77,11 +83,14 @@ func Test_UserStories(t *testing.T) {
 			form.values.Set("password", "reallyStrongPassword1")
 
 			c.mustSubmitForm(t, form, func(res *http.Response) {
-				// TODO: This should redirect to a dashboard page or similar.
 				// TODO: Verify csrf token was reset.
-				assertStatusCode(t, http.StatusOK)(res)
 				assertCookieWasSet(t, "hh-auth")(res)
+				assertRedirectsTo(t, "/dashboard", http.StatusFound)(res)
 			})
+		})
+
+		t.Run("verify I can now access the dashboard", func(t *testing.T) {
+			c.mustGetBody(t, "/dashboard", assertStatusCode(t, http.StatusOK))
 		})
 	}))
 }
@@ -136,10 +145,20 @@ type client struct {
 	http *http.Client
 }
 
-func newClient() *client {
+func newClient(t *testing.T) *client {
+	jar, err := cookiejar.New(&cookiejar.Options{
+		PublicSuffixList: publicsuffix.List,
+	})
+	if err != nil {
+		t.Fatalf("failed to create cookie jar: %v", err)
+	}
 	return &client{
 		http: &http.Client{
 			Timeout: httpClientTimeout,
+			Jar:     jar,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
 		},
 	}
 }
@@ -211,6 +230,18 @@ func assertStatusCode(t *testing.T, status int) func(*http.Response) {
 	return func(res *http.Response) {
 		if res.StatusCode != status {
 			t.Fatalf("expected status %d, got %d", status, res.StatusCode)
+		}
+	}
+}
+
+func assertRedirectsTo(t *testing.T, location string, status int) func(*http.Response) {
+	return func(res *http.Response) {
+		if res.StatusCode != status {
+			t.Fatalf("expected status %d, got %d", status, res.StatusCode)
+		}
+
+		if res.Header.Get("Location") != location {
+			t.Fatalf("expected redirect to %q, got %q", location, res.Header.Get("Location"))
 		}
 	}
 }

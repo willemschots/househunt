@@ -76,31 +76,31 @@ func mapRequest[IN any](s *Server, targetFunc func(context.Context, IN) error) *
 // 2. Maps the returned value of type OUT to the response with a status 200.
 //
 // Errors are written using the server error handler.
-func mapResponse[OUT any](s *Server, targetFunc func(context.Context) (OUT, error)) *mapper[struct{}, OUT] {
-	return &mapper[struct{}, OUT]{
-		s: s,
-		req: func(r *http.Request) (struct{}, error) {
-			return struct{}{}, nil
-		},
-		target: func(ctx context.Context, _ struct{}) (OUT, error) {
-			out, err := targetFunc(ctx)
-			if err != nil {
-				return out, err
-			}
-
-			return out, nil
-		},
-		res: func(r result[struct{}, OUT]) error {
-			return defaultResponse(r)
-		},
-	}
-}
+//func mapResponse[OUT any](s *Server, targetFunc func(context.Context) (OUT, error)) *mapper[struct{}, OUT] {
+//	return &mapper[struct{}, OUT]{
+//		s: s,
+//		req: func(r *http.Request) (struct{}, error) {
+//			return struct{}{}, nil
+//		},
+//		target: func(ctx context.Context, _ struct{}) (OUT, error) {
+//			out, err := targetFunc(ctx)
+//			if err != nil {
+//				return out, err
+//			}
+//
+//			return out, nil
+//		},
+//		res: func(r result[struct{}, OUT]) error {
+//			return defaultResponse(r)
+//		},
+//	}
+//}
 
 // request overwrites the function that maps the request to the input type.
-func (e *mapper[IN, OUT]) request(fn func(r *http.Request) (IN, error)) *mapper[IN, OUT] {
-	e.req = fn
-	return e
-}
+//func (e *mapper[IN, OUT]) request(fn func(r *http.Request) (IN, error)) *mapper[IN, OUT] {
+//	e.req = fn
+//	return e
+//}
 
 // response overwrites the function that writes the output to the response.
 func (e *mapper[IN, OUT]) response(fn func(result[IN, OUT]) error) *mapper[IN, OUT] {
