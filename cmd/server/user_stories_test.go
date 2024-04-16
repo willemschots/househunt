@@ -84,7 +84,11 @@ func Test_UserStories(t *testing.T) {
 
 			c.mustSubmitForm(t, form, func(res *http.Response) {
 				// TODO: Verify csrf token was reset.
-				assertCookieWasSet(t, "hh-auth")(res)
+				assertCookie(t, "hh-auth", func(c *http.Cookie) {
+					if c.Value == "" || c.MaxAge == 0 {
+						t.Fatalf("expected auth cookie to be set")
+					}
+				})(res)
 				assertRedirectsTo(t, "/dashboard", http.StatusFound)(res)
 			})
 		})
@@ -92,6 +96,43 @@ func Test_UserStories(t *testing.T) {
 		t.Run("verify I can now access the dashboard", func(t *testing.T) {
 			c.mustGetBody(t, "/dashboard", assertStatusCode(t, http.StatusOK))
 		})
+
+		t.Run("get the dashboard and log out", func(t *testing.T) {
+			body := c.mustGetBody(t, "/dashboard", assertStatusCode(t, http.StatusOK))
+
+			form := parseHTMLFormWithID(t, strings.NewReader(body), "logout-user")
+
+			c.mustSubmitForm(t, form, func(res *http.Response) {
+				assertCookie(t, "hh-auth", func(c *http.Cookie) {
+					if c.MaxAge >= 0 {
+						t.Fatalf("expected auth cookie to be unset")
+					}
+				})(res)
+				assertRedirectsTo(t, "/", http.StatusFound)(res)
+			})
+		})
+
+		t.Run("verify I can't access the dashboard", func(t *testing.T) {
+			c.mustGetBody(t, "/dashboard", assertStatusCode(t, http.StatusNotFound))
+		})
+
+		//t.Run("verify I can't access the dashboard after logging out", func(t *testing.T) {
+		//})
+		//
+		//t.Run("request a password reset", func(t *testing.T) {
+		//})
+		//
+		//t.Run("wait for the password reset email", func(t *testing.T) {
+		//})
+		//
+		//t.Run("reset my password", func(t *testing.T) {
+		//})
+		//
+		//t.Run("login with the new password", func(t *testing.T) {
+		//})
+		//
+		//t.Run("verify I can access the dashboard", func(t *testing.T) {
+		//})
 	}))
 }
 
@@ -250,18 +291,19 @@ func assertRedirectsTo(t *testing.T, location string, status int) func(*http.Res
 	}
 }
 
-func assertCookieWasSet(t *testing.T, name string) func(*http.Response) {
+func assertCookie(t *testing.T, name string, assertFunc func(c *http.Cookie)) func(*http.Response) {
 	return func(res *http.Response) {
 		foundCookie := false
 		for _, cookie := range res.Cookies() {
 			if cookie.Name == name {
 				foundCookie = true
+				assertFunc(cookie)
 				break
 			}
 		}
 
 		if !foundCookie {
-			t.Error("expected auth cookie to be set")
+			t.Fatalf("expected auth cookie to be set")
 		}
 	}
 }

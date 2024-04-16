@@ -74,6 +74,20 @@ func (s *Server) readAuthSession(r *http.Request) (uuid.UUID, error) {
 	return userID, nil
 }
 
+func (s *Server) stopAuthSession(w http.ResponseWriter, r *http.Request) error {
+	session, err := s.deps.SessionStore.Get(r, AuthSession)
+	if err != nil {
+		return err
+	}
+
+	if session.IsNew {
+		return errorz.ErrNotFound
+	}
+
+	session.Options.MaxAge = -1 // Setting the age in the past will delete the cookie.
+	return s.deps.SessionStore.Save(r, w, session)
+}
+
 func (s *Server) session(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		userID, err := s.readAuthSession(r)

@@ -4,6 +4,13 @@
   <title>{{ template "title" .}}</title>
 </head>
 <body>
+
+  {{ if .Global.IsLoggedIn }}
+  <form action="/logout" id="logout-user" method="POST">
+    <input type="submit" value="Logout">
+  </form>
+  {{ end }}
+
   {{ template "body" . }}
 </body>
 </html>
