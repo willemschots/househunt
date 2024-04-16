@@ -120,7 +120,7 @@ func run(ctx context.Context, w io.Writer) int {
 		keysAsBytes[i] = key.SecretValue()
 	}
 	sessionStore := sessions.NewCookieStore(keysAsBytes...)
-	sessionStore.Options.Secure = cfg.http.secureCookie
+	sessionStore.Options.Secure = cfg.http.server.SecureCookie
 	sessionStore.Options.HttpOnly = true
 	sessionStore.MaxAge(7 * 24 * 60 * 60) // 1 week
 
@@ -139,7 +139,7 @@ func run(ctx context.Context, w io.Writer) int {
 		ReadTimeout:  cfg.http.readTimeout,
 		WriteTimeout: cfg.http.writeTimeout,
 		IdleTimeout:  cfg.http.idleTimeout,
-		Handler:      web.NewServer(serverDeps),
+		Handler:      web.NewServer(serverDeps, cfg.http.server),
 	}
 
 	// We need to run two tasks concurrently:

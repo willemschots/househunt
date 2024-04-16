@@ -10,7 +10,9 @@ import (
 )
 
 const (
-	AuthSession = "hh-auth"
+	authCookieName      = "hh-auth"
+	csrfTokenCookieName = "csrf"
+	csrfTokenField      = "csrfToken"
 )
 
 func (s *Server) public(pattern string, handler http.Handler) {
@@ -43,7 +45,7 @@ func (s *Server) loggedIn(pattern string, handler http.Handler) {
 }
 
 func (s *Server) writeAuthSession(w http.ResponseWriter, r *http.Request, userID uuid.UUID) error {
-	session, err := s.deps.SessionStore.Get(r, AuthSession)
+	session, err := s.deps.SessionStore.Get(r, authCookieName)
 	if err != nil {
 		return err
 	}
@@ -57,7 +59,7 @@ func (s *Server) writeAuthSession(w http.ResponseWriter, r *http.Request, userID
 }
 
 func (s *Server) readAuthSession(r *http.Request) (uuid.UUID, error) {
-	session, err := s.deps.SessionStore.Get(r, AuthSession)
+	session, err := s.deps.SessionStore.Get(r, authCookieName)
 	if err != nil {
 		return uuid.Nil, err
 	}
@@ -75,7 +77,7 @@ func (s *Server) readAuthSession(r *http.Request) (uuid.UUID, error) {
 }
 
 func (s *Server) stopAuthSession(w http.ResponseWriter, r *http.Request) error {
-	session, err := s.deps.SessionStore.Get(r, AuthSession)
+	session, err := s.deps.SessionStore.Get(r, authCookieName)
 	if err != nil {
 		return err
 	}

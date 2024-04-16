@@ -8,11 +8,13 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
+	"github.com/gorilla/csrf"
 	"github.com/gorilla/schema"
 	"github.com/gorilla/sessions"
 	"github.com/willemschots/househunt/internal/auth"
 	"github.com/willemschots/househunt/internal/email"
 	"github.com/willemschots/househunt/internal/errorz"
+	"github.com/willemschots/househunt/internal/krypto"
 )
 
 // ViewRenderer renders named views with the given data.
@@ -28,6 +30,12 @@ type ServerDeps struct {
 	SessionStore sessions.Store
 }
 
+// ServerConfig is the configuration for the server.
+type ServerConfig struct {
+	CSRFKey      krypto.Key
+	SecureCookie bool
+}
+
 type Server struct {
 	deps    *ServerDeps
 	mux     *http.ServeMux
@@ -35,7 +43,7 @@ type Server struct {
 	handler http.Handler
 }
 
-func NewServer(deps *ServerDeps) *Server {
+func NewServer(deps *ServerDeps, cfg ServerConfig) *Server {
 	s := &Server{
 		deps:    deps,
 		mux:     http.NewServeMux(),
@@ -111,14 +119,22 @@ func NewServer(deps *ServerDeps) *Server {
 	// Dashboard endpoints
 	s.loggedIn("GET /dashboard", s.staticHandler("dashboard"))
 
-	// TODO: GET /reset-password - show password reset form
-	//mux.Handle("POST /reset-password", HandleIn(s.AuthService.RequestPasswordReset))
+	// Wrap the mux with global middlewares.
+	csrfMW := csrf.Protect(
+		cfg.CSRFKey.SecretValue(),
+		csrf.CookieName(csrfTokenCookieName),
+		csrf.FieldName(csrfTokenField),
+		csrf.Secure(cfg.SecureCookie),
+	)
 
-	// TODO: GET /password-reset-requests
-	//mux.Handle("POST /password-resets", HandleIn(s.AuthService.ResetPassword))
-
-	// Wrap the mux with global middleware.
-	s.handler = s.session(s.mux)
+	middlewares := []func(http.Handler) http.Handler{
+		csrfMW,
+		s.session,
+	}
+	s.handler = s.mux
+	for i := len(middlewares) - 1; i >= 0; i-- {
+		s.handler = middlewares[i](s.handler)
+	}
 
 	return s
 }
@@ -145,9 +161,11 @@ func (s *Server) writeView(w http.ResponseWriter, r *http.Request, name string, 
 		View   any
 	}{
 		Global: struct {
+			CSRFToken  string
 			IsLoggedIn bool
 			UserID     uuid.UUID
 		}{
+			CSRFToken:  csrf.Token(r),
 			IsLoggedIn: ok,
 			UserID:     userID,
 		},

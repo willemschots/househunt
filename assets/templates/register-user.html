@@ -4,6 +4,7 @@
 
 <h1>Register as an Agent</h1>
 <form action="/register" id="register-user" method="POST">
+  {{ template "csrf-input" . }}
   <input type="email" name="email" placeholder="Email" required>
   <input type="password" name="password" placeholder="Password" required>
   <input type="submit" value="Register Account">

@@ -4,6 +4,7 @@
 
 <h1>Activating your account...</h1>
 <form action="/user-activations" id="activate-user" method="POST">
+  {{ template "csrf-input" . }}
   <input type="hidden" name="id" value="{{ .View.ID }}">
   <input type="hidden" name="token" value="{{ .View.Token }}">
   <input type="submit" value="Activate Account">
