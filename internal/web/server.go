@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/schema"
 	"github.com/gorilla/sessions"
 	"github.com/willemschots/househunt/internal/auth"
@@ -40,6 +41,10 @@ func NewServer(deps *ServerDeps) *Server {
 		decoder: schema.NewDecoder(),
 	}
 
+	// Most non-static endpoints below are created using the mapBoth, mapRequest or mapResponse functions.
+	// These functions return handlers that automatically map between HTTP requests, target functions and HTTP responses.
+	// The request mapping and response writing is customizable.
+
 	s.public("GET /{$}", s.staticHandler("hello-world"))
 
 	// Register user endpoints.
@@ -52,7 +57,7 @@ func NewServer(deps *ServerDeps) *Server {
 	}
 
 	s.publicOnly("GET /user-activations", mapBoth(s, forwardRawToken).response(func(r result[auth.EmailTokenRaw, auth.EmailTokenRaw]) error {
-		return s.writeView(r.w, "activate-user", r.out)
+		return s.writeView(r.w, r.r, "activate-user", r.out)
 	}))
 
 	s.publicOnly("POST /user-activations", mapRequest(s, deps.AuthService.ActivateUser))
@@ -70,21 +75,19 @@ func NewServer(deps *ServerDeps) *Server {
 		return nil
 	}))
 
+	// Logout user endpoint
+	s.loggedIn("POST /logout", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		err := s.stopAuthSession(w, r)
+		if err != nil {
+			s.handleError(w, err)
+			return
+		}
+
+		http.Redirect(w, r, "/", http.StatusFound)
+	}))
+
+	// Dashboard endpoints
 	s.loggedIn("GET /dashboard", s.staticHandler("dashboard"))
-
-	//s.mux.Handle("GET /login")
-
-	//registerHandler := newInHandler(s, deps.AuthService.RegisterUser)
-	//registerHandler.outFunc = func(w http.ResponseWriter, _ struct{}) {
-	//}
-
-	//s.mux.Handle("POST /register", registerHandler)
-
-	// TODO: GET /user-activations
-	//mux.Handle("POST /user-activations", HandleIn(s.AuthService.ActivateUser))
-
-	// TODO: GET /login - show login form
-	//mux.Handle("POST /login", HandleInOut(s.AuthService.Authenticate))
 
 	// TODO: GET /reset-password - show password reset form
 	//mux.Handle("POST /reset-password", HandleIn(s.AuthService.RequestPasswordReset))
@@ -92,7 +95,7 @@ func NewServer(deps *ServerDeps) *Server {
 	// TODO: GET /password-reset-requests
 	//mux.Handle("POST /password-resets", HandleIn(s.AuthService.ResetPassword))
 
-	// Wrap the mux in global middleware.
+	// Wrap the mux with global middleware.
 	s.handler = s.session(s.mux)
 
 	return s
@@ -104,7 +107,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) staticHandler(name string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		err := s.writeView(w, name, nil)
+		err := s.writeView(w, r, name, nil)
 		if err != nil {
 			s.handleError(w, err)
 			return
@@ -112,9 +115,25 @@ func (s *Server) staticHandler(name string) http.HandlerFunc {
 	}
 }
 
-func (s *Server) writeView(w http.ResponseWriter, name string, data any) error {
+func (s *Server) writeView(w http.ResponseWriter, r *http.Request, name string, data any) error {
+	userID, ok := UserIDFromContext(r.Context())
+
+	viewData := struct {
+		Global any
+		View   any
+	}{
+		Global: struct {
+			IsLoggedIn bool
+			UserID     uuid.UUID
+		}{
+			IsLoggedIn: ok,
+			UserID:     userID,
+		},
+		View: data,
+	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	return s.deps.ViewRenderer.Render(w, name, data)
+	return s.deps.ViewRenderer.Render(w, name, viewData)
 }
 
 func (s *Server) handleError(w http.ResponseWriter, err error) {
