@@ -47,7 +47,7 @@ func Test_UserStories(t *testing.T) {
 
 		t.Run("wait for the activation email", func(t *testing.T) {
 			// wait for the activation email to be logged.
-			activationURL = waitAndCaptureActivationURL(t, logs, "agent@example.com")
+			activationURL = waitAndCaptureURL(t, logs, "agent@example.com", "/user-activations")
 		})
 
 		t.Run("activate my new account", func(t *testing.T) {
@@ -116,23 +116,63 @@ func Test_UserStories(t *testing.T) {
 			c.mustGetBody(t, "/dashboard", assertStatusCode(t, http.StatusNotFound))
 		})
 
-		//t.Run("verify I can't access the dashboard after logging out", func(t *testing.T) {
-		//})
-		//
-		//t.Run("request a password reset", func(t *testing.T) {
-		//})
-		//
-		//t.Run("wait for the password reset email", func(t *testing.T) {
-		//})
-		//
-		//t.Run("reset my password", func(t *testing.T) {
-		//})
-		//
-		//t.Run("login with the new password", func(t *testing.T) {
-		//})
-		//
-		//t.Run("verify I can access the dashboard", func(t *testing.T) {
-		//})
+		t.Run("request a new password because I forgot my old one", func(t *testing.T) {
+			// first view the form.
+			body := c.mustGetBody(t, "/forgot-password", assertStatusCode(t, http.StatusOK))
+
+			form := parseHTMLFormWithID(t, strings.NewReader(body), "forgot-password")
+
+			if !form.values.Has("email") {
+				t.Fatalf("expected form to have email field, got %v", form.values)
+			}
+
+			// then submit it.
+			form.values.Set("email", "agent@example.com")
+
+			// TODO: This should redirect to a success page.
+			c.mustSubmitForm(t, form, assertStatusCode(t, http.StatusOK))
+		})
+
+		var passwordResetURL *url.URL
+
+		t.Run("wait for the password reset email", func(t *testing.T) {
+			// wait for the password reset email to be logged.
+			passwordResetURL = waitAndCaptureURL(t, logs, "agent@example.com", "/password-resets")
+		})
+
+		t.Run("reset my password", func(t *testing.T) {
+			// first view the form
+			body := c.mustGetBody(t, passwordResetURL.String(), assertStatusCode(t, http.StatusOK))
+
+			form := parseHTMLFormWithID(t, strings.NewReader(body), "reset-password")
+
+			if !form.values.Has("rawtoken.id") || !form.values.Has("rawtoken.token") || !form.values.Has("password") {
+				t.Fatalf("expected form to have id, token, and password fields, got %v", form.values)
+			}
+
+			// set new password
+			form.values.Set("password", "newReallyStrongPassword1")
+
+			// then submit it.
+			c.mustSubmitForm(t, form, assertRedirectsTo(t, "/login", http.StatusFound))
+		})
+
+		t.Run("login with the new password", func(t *testing.T) {
+			// first view the login form.
+			body := c.mustGetBody(t, "/login", assertStatusCode(t, http.StatusOK))
+
+			form := parseHTMLFormWithID(t, strings.NewReader(body), "login-user")
+
+			// then submit it.
+			form.values.Set("email", "agent@example.com")
+			form.values.Set("password", "newReallyStrongPassword1")
+
+			c.mustSubmitForm(t, form, assertRedirectsTo(t, "/dashboard", http.StatusFound))
+		})
+
+		t.Run("verify I can access the dashboard", func(t *testing.T) {
+			c.mustGetBody(t, "/dashboard", assertStatusCode(t, http.StatusOK))
+		})
 	}))
 }
 
@@ -388,7 +428,7 @@ func addFormValues(t *testing.T, n *html.Node, vals *url.Values) {
 	}
 }
 
-func waitAndCaptureActivationURL(t *testing.T, logs *safeBuffer, addr string) *url.URL {
+func waitAndCaptureURL(t *testing.T, logs *safeBuffer, addr, urlPath string) *url.URL {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
@@ -401,7 +441,6 @@ func waitAndCaptureActivationURL(t *testing.T, logs *safeBuffer, addr string) *u
 
 		lookFor := []string{
 			`msg="send email"`,
-			`subject="Please confirm your email address"`,
 			fmt.Sprintf(`recipient=%s`, addr),
 		}
 
@@ -413,7 +452,7 @@ func waitAndCaptureActivationURL(t *testing.T, logs *safeBuffer, addr string) *u
 				}
 			}
 
-			activationURL, ok := extractActivationURL(line)
+			activationURL, ok := extractURLWithPath(line, urlPath)
 			if ok {
 				return activationURL, true
 			}
@@ -434,9 +473,9 @@ func waitAndCaptureActivationURL(t *testing.T, logs *safeBuffer, addr string) *u
 	}
 }
 
-func extractActivationURL(s string) (*url.URL, bool) {
+func extractURLWithPath(s, path string) (*url.URL, bool) {
 	s = strings.ReplaceAll(s, `\n`, " ")
-	pattern := fmt.Sprintf(`\b%s/user-activations\S+`, baseURL)
+	pattern := fmt.Sprintf(`\b%s%s\S+`, baseURL, path)
 	r := regexp.MustCompile(pattern)
 	result := r.FindString(s)
 	if result == "" {

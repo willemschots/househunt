@@ -11,6 +11,7 @@ import (
 	"github.com/gorilla/schema"
 	"github.com/gorilla/sessions"
 	"github.com/willemschots/househunt/internal/auth"
+	"github.com/willemschots/househunt/internal/email"
 	"github.com/willemschots/househunt/internal/errorz"
 )
 
@@ -84,6 +85,27 @@ func NewServer(deps *ServerDeps) *Server {
 		}
 
 		http.Redirect(w, r, "/", http.StatusFound)
+	}))
+
+	// Reset password endpoints
+	s.publicOnly("GET /forgot-password", s.staticHandler("forgot-password"))
+
+	type passwordReset struct {
+		Email email.Address
+	}
+
+	s.publicOnly("POST /forgot-password", mapRequest(s, func(ctx context.Context, reset passwordReset) error {
+		s.deps.AuthService.RequestPasswordReset(ctx, reset.Email)
+		return nil
+	}))
+
+	s.publicOnly("GET /password-resets", mapBoth(s, forwardRawToken).response(func(r result[auth.EmailTokenRaw, auth.EmailTokenRaw]) error {
+		return s.writeView(r.w, r.r, "reset-password", r.out)
+	}))
+
+	s.publicOnly("POST /password-resets", mapRequest(s, deps.AuthService.ResetPassword).response(func(r result[auth.NewPassword, struct{}]) error {
+		http.Redirect(r.w, r.r, "/login", http.StatusFound)
+		return nil
 	}))
 
 	// Dashboard endpoints
