@@ -13,6 +13,7 @@ import (
 	"github.com/willemschots/househunt/internal/auth"
 	"github.com/willemschots/househunt/internal/email"
 	"github.com/willemschots/househunt/internal/errorz"
+	"github.com/willemschots/househunt/internal/krypto"
 )
 
 // ViewRenderer renders named views with the given data.
@@ -28,6 +29,11 @@ type ServerDeps struct {
 	SessionStore sessions.Store
 }
 
+// ServerConfig is the configuration for the server.
+type ServerConfig struct {
+	CSRFKey krypto.Key
+}
+
 type Server struct {
 	deps    *ServerDeps
 	mux     *http.ServeMux
@@ -35,7 +41,7 @@ type Server struct {
 	handler http.Handler
 }
 
-func NewServer(deps *ServerDeps) *Server {
+func NewServer(deps *ServerDeps, cfg ServerConfig) *Server {
 	s := &Server{
 		deps:    deps,
 		mux:     http.NewServeMux(),

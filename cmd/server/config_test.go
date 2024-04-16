@@ -16,6 +16,7 @@ import (
 func requiredEnv() map[string]string {
 	return map[string]string{
 		"HTTP_COOKIE_KEYS":    "568554094ec040ab8a6b3e6d7cc138b0dc855f39ba1aeb2ffc903f7260b3a452,d503685b5e0848dcd1026711a5d92e8a087dfaffa489fb563e0de73db2f2476c",
+		"HTTP_CSRF_KEY":       "dfab77e26917c6e37a173690443a0016808ef7b24e32424d45cd83454198a6ec",
 		"DB_BLIND_INDEX_SALT": "b61115eeb1bdf0847f1d7ea978c7da71e3b31361f7450bc8aa12566a16b7b03f",
 		"DB_ENCRYPTION_KEYS":  "2b671594b775f371eab4050b4d58326682df6b1a6cc2e886717b1a26b4d6c45d",
 		"EMAIL_FROM":          "househunt@example.com",
@@ -28,6 +29,7 @@ func newConfig(mf func(*config)) config {
 		must(krypto.ParseKey("568554094ec040ab8a6b3e6d7cc138b0dc855f39ba1aeb2ffc903f7260b3a452")),
 		must(krypto.ParseKey("d503685b5e0848dcd1026711a5d92e8a087dfaffa489fb563e0de73db2f2476c")),
 	}
+	c.http.server.CSRFKey = must(krypto.ParseKey("dfab77e26917c6e37a173690443a0016808ef7b24e32424d45cd83454198a6ec"))
 	c.db.blindIndexSalt = must(krypto.ParseKey("b61115eeb1bdf0847f1d7ea978c7da71e3b31361f7450bc8aa12566a16b7b03f"))
 	c.db.encryptionKeys = []krypto.Key{
 		must(krypto.ParseKey("2b671594b775f371eab4050b4d58326682df6b1a6cc2e886717b1a26b4d6c45d")),
@@ -102,6 +104,13 @@ func TestConfigFromEnv(t *testing.T) {
 				c.http.secureCookie = false
 			},
 		},
+		"ok, other HTTP_CSRF_KEY": {
+			key: "HTTP_CSRF_KEY",
+			val: "218dbd640d2ae9bd7a81e45f1ad963ecea3027fea21b9c3b93ca3ad69915f733",
+			mf: func(c *config) {
+				c.http.server.CSRFKey = must(krypto.ParseKey("218dbd640d2ae9bd7a81e45f1ad963ecea3027fea21b9c3b93ca3ad69915f733"))
+			},
+		},
 		"ok, non-default DB_FILENAME": {
 			key: "DB_FILENAME", val: "test.db", mf: func(c *config) { c.db.file = "test.db" },
 		},
@@ -173,6 +182,7 @@ func TestConfigFromEnv(t *testing.T) {
 		"fail, negative HTTP_SHUTDOWN_TIMEOUT": {"HTTP_SHUTDOWN_TIMEOUT", "-1ms"},
 		"fail, invalid HTTP_COOKIE_KEYS":       {"HTTP_COOKIE_KEYS", "abc"},
 		"fail, invalid HTTP_SECURE_COOKIE":     {"HTTP_SECURE_COOKIE", "abc"},
+		"fail, invalid HTTP_CSRF_KEY":          {"HTTP_CSRF_KEY", "abc"},
 		"fail, empty DB_FILENAME":              {"DB_FILENAME", ""},
 		"fail, invalid DB_MIGRATE":             {"DB_MIGRATE", "no!"},
 		"fail, invalid DB_BLIND_INDEX_SALT":    {"DB_BLIND_INDEX_SALT", "abc"},

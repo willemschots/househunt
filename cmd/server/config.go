@@ -13,6 +13,7 @@ import (
 	"github.com/willemschots/househunt/internal/auth"
 	"github.com/willemschots/househunt/internal/email"
 	"github.com/willemschots/househunt/internal/krypto"
+	"github.com/willemschots/househunt/internal/web"
 )
 
 // httpConfig is the configuration for the HTTP server.
@@ -27,6 +28,7 @@ type httpConfig struct {
 	// are interpreted.
 	cookieKeys   []krypto.Key
 	secureCookie bool
+	server       web.ServerConfig
 }
 
 // dbConfig is the database configuration.
@@ -124,6 +126,12 @@ var envMap = map[string]envVariable{
 	"HTTP_SECURE_COOKIE": {
 		mapFunc: func(v string, c *config) error {
 			return confBool(v, &c.http.secureCookie)
+		},
+	},
+	"HTTP_CSRF_KEY": {
+		required: true,
+		mapFunc: func(v string, c *config) error {
+			return confCryptoKey(v, &c.http.server.CSRFKey)
 		},
 	},
 	"DB_FILENAME": {

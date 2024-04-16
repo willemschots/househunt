@@ -139,7 +139,7 @@ func run(ctx context.Context, w io.Writer) int {
 		ReadTimeout:  cfg.http.readTimeout,
 		WriteTimeout: cfg.http.writeTimeout,
 		IdleTimeout:  cfg.http.idleTimeout,
-		Handler:      web.NewServer(serverDeps),
+		Handler:      web.NewServer(serverDeps, cfg.http.server),
 	}
 
 	// We need to run two tasks concurrently:
