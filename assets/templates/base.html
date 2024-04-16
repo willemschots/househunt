@@ -7,6 +7,7 @@
 
   {{ if .Global.IsLoggedIn }}
   <form action="/logout" id="logout-user" method="POST">
+    {{ template "csrf-input" . }}
     <input type="submit" value="Logout">
   </form>
   {{ end }}

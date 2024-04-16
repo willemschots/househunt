@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
+	"github.com/gorilla/csrf"
 	"github.com/gorilla/schema"
 	"github.com/gorilla/sessions"
 	"github.com/willemschots/househunt/internal/auth"
@@ -31,7 +32,8 @@ type ServerDeps struct {
 
 // ServerConfig is the configuration for the server.
 type ServerConfig struct {
-	CSRFKey krypto.Key
+	CSRFKey      krypto.Key
+	SecureCookie bool
 }
 
 type Server struct {
@@ -117,14 +119,22 @@ func NewServer(deps *ServerDeps, cfg ServerConfig) *Server {
 	// Dashboard endpoints
 	s.loggedIn("GET /dashboard", s.staticHandler("dashboard"))
 
-	// TODO: GET /reset-password - show password reset form
-	//mux.Handle("POST /reset-password", HandleIn(s.AuthService.RequestPasswordReset))
+	// Wrap the mux with global middlewares.
+	csrfMW := csrf.Protect(
+		cfg.CSRFKey.SecretValue(),
+		csrf.CookieName(csrfTokenCookieName),
+		csrf.FieldName(csrfTokenField),
+		csrf.Secure(cfg.SecureCookie),
+	)
 
-	// TODO: GET /password-reset-requests
-	//mux.Handle("POST /password-resets", HandleIn(s.AuthService.ResetPassword))
-
-	// Wrap the mux with global middleware.
-	s.handler = s.session(s.mux)
+	middlewares := []func(http.Handler) http.Handler{
+		csrfMW,
+		s.session,
+	}
+	s.handler = s.mux
+	for i := len(middlewares) - 1; i >= 0; i-- {
+		s.handler = middlewares[i](s.handler)
+	}
 
 	return s
 }
@@ -151,9 +161,11 @@ func (s *Server) writeView(w http.ResponseWriter, r *http.Request, name string, 
 		View   any
 	}{
 		Global: struct {
+			CSRFToken  string
 			IsLoggedIn bool
 			UserID     uuid.UUID
 		}{
+			CSRFToken:  csrf.Token(r),
 			IsLoggedIn: ok,
 			UserID:     userID,
 		},

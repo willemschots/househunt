@@ -144,6 +144,10 @@ func defaultRequest[IN any](s *Server, r *http.Request) (IN, error) {
 		return in, err
 	}
 
+	// Remove the CSRF token from the form, it won't need to be mapped
+	// to any target types and the decoder will fail on it.
+	r.Form.Del(csrfTokenField)
+
 	err = s.decoder.Decode(&in, r.Form)
 	if err != nil {
 		return in, err

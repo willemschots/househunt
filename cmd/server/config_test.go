@@ -101,7 +101,7 @@ func TestConfigFromEnv(t *testing.T) {
 			key: "HTTP_SECURE_COOKIE",
 			val: "false",
 			mf: func(c *config) {
-				c.http.secureCookie = false
+				c.http.server.SecureCookie = false
 			},
 		},
 		"ok, other HTTP_CSRF_KEY": {
