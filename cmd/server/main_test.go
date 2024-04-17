@@ -238,10 +238,3 @@ func testEnv(testFunc func(t *testing.T)) func(t *testing.T) {
 		testFunc(t)
 	}
 }
-
-func must[T any](v T, err error) T {
-	if err != nil {
-		panic(err)
-	}
-	return v
-}
