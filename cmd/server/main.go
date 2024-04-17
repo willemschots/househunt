@@ -23,6 +23,7 @@ import (
 	"github.com/willemschots/househunt/internal/db"
 	"github.com/willemschots/househunt/internal/db/migrate"
 	"github.com/willemschots/househunt/internal/email"
+	"github.com/willemschots/househunt/internal/email/postmark"
 	emailview "github.com/willemschots/househunt/internal/email/view"
 	"github.com/willemschots/househunt/internal/krypto"
 	"github.com/willemschots/househunt/internal/web"
@@ -98,8 +99,20 @@ func run(ctx context.Context, w io.Writer) int {
 
 	// Create emailer.
 	emailRenderer := emailview.NewFSRenderer(assets.EmailFS)
-	logSender := email.NewLogSender(logger)
-	emailer := email.NewService(emailRenderer, logSender, cfg.email)
+
+	var sender email.Sender
+	switch cfg.email.driver {
+	case "log":
+		sender = email.NewLogSender(logger)
+	case "postmark":
+		httpClient := &http.Client{
+			Timeout: 10 * time.Second,
+		}
+		sender = postmark.NewSender(httpClient, cfg.email.postmark)
+	default:
+		logger.Error("unknown email driver", "driver", cfg.email.driver)
+	}
+	emailer := email.NewService(emailRenderer, sender, cfg.email.service)
 
 	// Create authentication store and service.
 	authStore := authdb.New(dbh.write, dbh.read, encryptor, cfg.db.blindIndexSalt)

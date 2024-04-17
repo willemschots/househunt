@@ -34,7 +34,7 @@ func newConfig(mf func(*config)) config {
 	c.db.encryptionKeys = []krypto.Key{
 		must(krypto.ParseKey("2b671594b775f371eab4050b4d58326682df6b1a6cc2e886717b1a26b4d6c45d")),
 	}
-	c.email.From = must(email.ParseAddress("househunt@example.com"))
+	c.email.service.From = must(email.ParseAddress("househunt@example.com"))
 
 	if mf != nil {
 		mf(&c)
@@ -69,7 +69,7 @@ func TestConfigFromEnv(t *testing.T) {
 			key: "BASE_URL",
 			val: "https://example.com:9999",
 			mf: func(c *config) {
-				c.email.BaseURL = must(url.Parse("https://example.com:9999"))
+				c.email.service.BaseURL = must(url.Parse("https://example.com:9999"))
 			},
 		},
 		"ok, non-default HTTP_ADDR": {
@@ -140,11 +140,39 @@ func TestConfigFromEnv(t *testing.T) {
 		"ok, non-default AUTH_TOKEN_EXPIRY": {
 			key: "AUTH_TOKEN_EXPIRY", val: "51m", mf: func(c *config) { c.auth.TokenExpiry = 51 * time.Minute },
 		},
+		"ok, non-default EMAIL_DRIVER": {
+			key: "EMAIL_DRIVER",
+			val: "postmark",
+			mf: func(c *config) {
+				c.email.driver = "postmark"
+			},
+		},
 		"ok, other EMAIL_FROM": {
 			key: "EMAIL_FROM",
 			val: "test@example.com",
 			mf: func(c *config) {
-				c.email.From = must(email.ParseAddress("test@example.com"))
+				c.email.service.From = must(email.ParseAddress("test@example.com"))
+			},
+		},
+		"ok, non-default POSTMARK_API_URL": {
+			key: "POSTMARK_API_URL",
+			val: "https://example.com",
+			mf: func(c *config) {
+				c.email.postmark.APIURL = must(url.Parse("https://example.com"))
+			},
+		},
+		"ok, other POSTMARK_MESSAGE_STREAM": {
+			key: "POSTMARK_MESSAGE_STREAM",
+			val: "other_stream",
+			mf: func(c *config) {
+				c.email.postmark.MessageStream = "other_stream"
+			},
+		},
+		"ok, other POSTMARK_SERVER_TOKEN": {
+			key: "POSTMARK_SERVER_TOKEN",
+			val: "testToken",
+			mf: func(c *config) {
+				c.email.postmark.ServerToken = krypto.NewSecret("testToken")
 			},
 		},
 	}
@@ -191,6 +219,7 @@ func TestConfigFromEnv(t *testing.T) {
 		"fail, negative AUTH_WORKER_TIMEOUT":   {"AUTH_WORKER_TIMEOUT", "-1ms"},
 		"fail, negative AUTH_TOKEN_EXPIRY":     {"AUTH_TOKEN_EXPIRY", "-1ms"},
 		"fail, invalid EMAIL_FROM":             {"EMAIL_FROM", "@@"},
+		"fail, invalid POSTMARK_API_URL":       {"POSTMARK_API_URL", "not-a-url"},
 	}
 
 	for name, tc := range invalid {

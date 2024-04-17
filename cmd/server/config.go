@@ -12,6 +12,7 @@ import (
 
 	"github.com/willemschots/househunt/internal/auth"
 	"github.com/willemschots/househunt/internal/email"
+	"github.com/willemschots/househunt/internal/email/postmark"
 	"github.com/willemschots/househunt/internal/krypto"
 	"github.com/willemschots/househunt/internal/web"
 )
@@ -38,20 +39,23 @@ type dbConfig struct {
 	blindIndexSalt krypto.Key
 }
 
+type emailConfig struct {
+	driver   string
+	service  email.ServiceConfig
+	postmark postmark.Settings
+}
+
 // config is the configuration for the server command.
 type config struct {
 	http  httpConfig
 	db    dbConfig
 	auth  auth.ServiceConfig
-	email email.ServiceConfig
+	email emailConfig
 }
 
 // defaultConfig returns a config with sane default values.
 func defaultConfig() config {
-	baseURL, err := url.Parse("http://localhost:8888")
-	if err != nil {
-		panic(fmt.Sprintf("failed to parse default base URL: %v", err))
-	}
+	baseURL := must(url.Parse("http://localhost:8888"))
 
 	return config{
 		http: httpConfig{
@@ -72,8 +76,15 @@ func defaultConfig() config {
 			WorkerTimeout: time.Second * 30,
 			TokenExpiry:   time.Minute * 30,
 		},
-		email: email.ServiceConfig{
-			BaseURL: baseURL,
+		email: emailConfig{
+			driver: "log",
+			service: email.ServiceConfig{
+				BaseURL: baseURL,
+			},
+			postmark: postmark.Settings{
+				APIURL:        must(url.Parse("https://api.postmarkapp.com/email")),
+				MessageStream: "outbound",
+			},
 		},
 	}
 }
@@ -89,7 +100,7 @@ type envVariable struct {
 var envMap = map[string]envVariable{
 	"BASE_URL": {
 		mapFunc: func(v string, c *config) error {
-			return confURL(v, c.email.BaseURL)
+			return confURL(v, c.email.service.BaseURL)
 		},
 	},
 	"HTTP_ADDR": {
@@ -167,10 +178,32 @@ var envMap = map[string]envVariable{
 			return confDuration(v, &c.auth.TokenExpiry, 0, math.MaxInt64)
 		},
 	},
+	"EMAIL_DRIVER": {
+		mapFunc: func(v string, c *config) error {
+			c.email.driver = v // validated later on.
+			return nil
+		},
+	},
 	"EMAIL_FROM": {
 		required: true,
 		mapFunc: func(v string, c *config) error {
-			return confEmailAddress(v, &c.email.From)
+			return confEmailAddress(v, &c.email.service.From)
+		},
+	},
+	"POSTMARK_API_URL": {
+		mapFunc: func(v string, c *config) error {
+			return confURL(v, c.email.postmark.APIURL)
+		},
+	},
+	"POSTMARK_MESSAGE_STREAM": {
+		mapFunc: func(v string, c *config) error {
+			c.email.postmark.MessageStream = v
+			return nil
+		},
+	},
+	"POSTMARK_SERVER_TOKEN": {
+		mapFunc: func(v string, c *config) error {
+			return confSecret(v, &c.email.postmark.ServerToken)
 		},
 	},
 }
@@ -257,7 +290,7 @@ func confBool(v string, tgt *bool) error {
 	return nil
 }
 
-// confDuration attempts to parse v into tgt as a crypto key.
+// confCryptoKey attempts to parse v into tgt as a crypto key.
 func confCryptoKey(v string, tgt *krypto.Key) error {
 	k, err := krypto.ParseKey(v)
 	if err != nil {
@@ -266,6 +299,12 @@ func confCryptoKey(v string, tgt *krypto.Key) error {
 
 	*tgt = k
 
+	return nil
+}
+
+// confSecret attempts to parse v into tgt as a secret
+func confSecret(v string, tgt *krypto.Secret) error {
+	*tgt = krypto.NewSecret(v)
 	return nil
 }
 
@@ -296,4 +335,12 @@ func confSliceOf[T any](v string, tgt *[]T, elemFunc func(string) (T, error), mi
 	}
 
 	return nil
+}
+
+func must[T any](t T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+
+	return t
 }
