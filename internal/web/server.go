@@ -75,7 +75,19 @@ func NewServer(deps *ServerDeps, cfg ServerConfig) *Server {
 	s.publicOnly("GET /login", s.staticHandler("login-user"))
 	s.publicOnly("POST /login", mapBoth(s, deps.AuthService.Authenticate).response(func(r result[auth.Credentials, auth.User]) error {
 		// If we get here, the user has been authenticated.
-		// TODO: Refresh CSRF token once added.
+
+		// We clear the CSRF token to provide defense in depth against fixation attacks.
+		// If an attacker somehow gains access to the CSRF token before the user logged in, it will
+		// be worthless after the user logs in.
+		// See this link for more information:
+		// https://security.stackexchange.com/questions/209993/csrf-token-unique-per-user-session-why
+		//
+		// A new CSRF token will be generated on the next GET request after the redirect.
+		http.SetCookie(r.w, &http.Cookie{
+			Name:   csrfTokenCookieName,
+			MaxAge: -1,
+		})
+
 		err := s.writeAuthSession(r.w, r.r, r.out.ID)
 		if err != nil {
 			return err
