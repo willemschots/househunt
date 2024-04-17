@@ -83,12 +83,16 @@ func Test_UserStories(t *testing.T) {
 			form.values.Set("password", "reallyStrongPassword1")
 
 			c.mustSubmitForm(t, form, func(res *http.Response) {
-				// TODO: Verify csrf token was reset.
 				assertCookie(t, "hh-auth", func(c *http.Cookie) {
 					if c.Value == "" || c.MaxAge == 0 {
 						t.Fatalf("expected auth cookie to be set")
 					}
 				})(res)
+				assertCookie(t, "csrf", func(c *http.Cookie) {
+					if c.MaxAge >= 0 {
+						t.Fatalf("expected csrf cookie to be unset")
+					}
+				})
 				assertRedirectsTo(t, "/dashboard", http.StatusFound)(res)
 			})
 		})
