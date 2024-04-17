@@ -18,6 +18,7 @@ var (
 	ErrInvalidKey = errors.New("invalid key")
 )
 
+// Key is 32-byte encryption key.
 type Key struct {
 	value []byte
 }

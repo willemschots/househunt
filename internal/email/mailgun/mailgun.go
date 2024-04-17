@@ -10,14 +10,15 @@ import (
 	"strings"
 
 	"github.com/willemschots/househunt/internal/email"
+	"github.com/willemschots/househunt/internal/krypto"
 )
 
 // Settings contains the settings for the Mailgun API.
 type Settings struct {
 	APIHost  string
 	Domain   string
-	Username string
-	Password string
+	Username krypto.Secret
+	Password krypto.Secret
 }
 
 // Sender is an email sender that sends emails using the Mailgun API.
@@ -75,7 +76,7 @@ func (s *Sender) Send(ctx context.Context, from, recipient email.Address, subjec
 	}
 
 	req.Header.Set("Content-Type", w.FormDataContentType())
-	req.SetBasicAuth(s.settings.Username, s.settings.Password)
+	req.SetBasicAuth(string(s.settings.Username.SecretValue()), string(s.settings.Password.SecretValue()))
 
 	// And finally we send the request.
 	resp, err := s.client.Do(req)
