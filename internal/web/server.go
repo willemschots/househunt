@@ -88,17 +88,26 @@ func NewServer(deps *ServerDeps, cfg ServerConfig) *Server {
 			MaxAge: -1,
 		})
 
-		err := s.writeAuthSession(r.w, r.r, r.out.ID)
+		setSessionUserID(r.sess, r.out.ID)
+		err := s.deps.SessionStore.Save(r.r, r.w, r.sess)
 		if err != nil {
 			return err
 		}
+
 		http.Redirect(r.w, r.r, "/dashboard", http.StatusFound)
 		return nil
 	}))
 
 	// Logout user endpoint
 	s.loggedIn("POST /logout", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		err := s.stopAuthSession(w, r)
+		sess, err := sessionFromCtx(r.Context())
+		if err != nil {
+			s.handleError(w, err)
+			return
+		}
+
+		deleteSessionUserID(sess)
+		err = s.deps.SessionStore.Save(r, w, sess)
 		if err != nil {
 			s.handleError(w, err)
 			return
@@ -166,7 +175,12 @@ func (s *Server) staticHandler(name string) http.HandlerFunc {
 }
 
 func (s *Server) writeView(w http.ResponseWriter, r *http.Request, name string, data any) error {
-	userID, ok := UserIDFromContext(r.Context())
+	sess, err := sessionFromCtx(r.Context())
+	if err != nil {
+		return err
+	}
+
+	userID, ok := sessionUserID(sess)
 
 	viewData := struct {
 		Global any
