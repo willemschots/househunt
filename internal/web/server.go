@@ -58,7 +58,16 @@ func NewServer(deps *ServerDeps, cfg ServerConfig) *Server {
 
 	// Register user endpoints.
 	s.publicOnly("GET /register", s.staticHandler("register-user"))
-	s.publicOnly("POST /register", mapRequest(s, deps.AuthService.RegisterUser))
+	s.publicOnly("POST /register", mapRequest(s, deps.AuthService.RegisterUser).response(func(r result[auth.Credentials, struct{}]) error {
+		r.sess.AddFlash("Thank you for your registration. Please follow the instructions that have arrived in your inbox.")
+		err := s.deps.SessionStore.Save(r.r, r.w, r.sess)
+		if err != nil {
+			return err
+		}
+
+		http.Redirect(r.w, r.r, "/register", http.StatusFound)
+		return nil
+	}))
 
 	// Activate user endpoints.
 	forwardRawToken := func(ctx context.Context, token auth.EmailTokenRaw) (auth.EmailTokenRaw, error) {
@@ -69,7 +78,16 @@ func NewServer(deps *ServerDeps, cfg ServerConfig) *Server {
 		return s.writeView(r.w, r.r, "activate-user", r.out)
 	}))
 
-	s.publicOnly("POST /user-activations", mapRequest(s, deps.AuthService.ActivateUser))
+	s.publicOnly("POST /user-activations", mapRequest(s, deps.AuthService.ActivateUser).response(func(r result[auth.EmailTokenRaw, struct{}]) error {
+		r.sess.AddFlash("Your email address has been confirmed, login below.")
+		err := s.deps.SessionStore.Save(r.r, r.w, r.sess)
+		if err != nil {
+			return err
+		}
+
+		http.Redirect(r.w, r.r, "/login", http.StatusFound)
+		return nil
+	}))
 
 	// Login user endpoints
 	s.publicOnly("GET /login", s.staticHandler("login-user"))
@@ -88,17 +106,26 @@ func NewServer(deps *ServerDeps, cfg ServerConfig) *Server {
 			MaxAge: -1,
 		})
 
-		err := s.writeAuthSession(r.w, r.r, r.out.ID)
+		setSessionUserID(r.sess, r.out.ID)
+		err := s.deps.SessionStore.Save(r.r, r.w, r.sess)
 		if err != nil {
 			return err
 		}
+
 		http.Redirect(r.w, r.r, "/dashboard", http.StatusFound)
 		return nil
 	}))
 
 	// Logout user endpoint
 	s.loggedIn("POST /logout", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		err := s.stopAuthSession(w, r)
+		sess, err := sessionFromCtx(r.Context())
+		if err != nil {
+			s.handleError(w, err)
+			return
+		}
+
+		deleteSessionUserID(sess)
+		err = s.deps.SessionStore.Save(r, w, sess)
 		if err != nil {
 			s.handleError(w, err)
 			return
@@ -117,6 +144,15 @@ func NewServer(deps *ServerDeps, cfg ServerConfig) *Server {
 	s.publicOnly("POST /forgot-password", mapRequest(s, func(ctx context.Context, reset passwordReset) error {
 		s.deps.AuthService.RequestPasswordReset(ctx, reset.Email)
 		return nil
+	}).response(func(r result[passwordReset, struct{}]) error {
+		r.sess.AddFlash("Check your inbox for instructions to reset your password.")
+		err := s.deps.SessionStore.Save(r.r, r.w, r.sess)
+		if err != nil {
+			return err
+		}
+
+		http.Redirect(r.w, r.r, "/forgot-password", http.StatusFound)
+		return nil
 	}))
 
 	s.publicOnly("GET /password-resets", mapBoth(s, forwardRawToken).response(func(r result[auth.EmailTokenRaw, auth.EmailTokenRaw]) error {
@@ -124,6 +160,12 @@ func NewServer(deps *ServerDeps, cfg ServerConfig) *Server {
 	}))
 
 	s.publicOnly("POST /password-resets", mapRequest(s, deps.AuthService.ResetPassword).response(func(r result[auth.NewPassword, struct{}]) error {
+		r.sess.AddFlash("Your password was reset, login with your new password below")
+		err := s.deps.SessionStore.Save(r.r, r.w, r.sess)
+		if err != nil {
+			return err
+		}
+
 		http.Redirect(r.w, r.r, "/login", http.StatusFound)
 		return nil
 	}))
@@ -166,7 +208,12 @@ func (s *Server) staticHandler(name string) http.HandlerFunc {
 }
 
 func (s *Server) writeView(w http.ResponseWriter, r *http.Request, name string, data any) error {
-	userID, ok := UserIDFromContext(r.Context())
+	sess, err := sessionFromCtx(r.Context())
+	if err != nil {
+		return err
+	}
+
+	userID, ok := sessionUserID(sess)
 
 	viewData := struct {
 		Global any
@@ -176,12 +223,19 @@ func (s *Server) writeView(w http.ResponseWriter, r *http.Request, name string, 
 			CSRFToken  string
 			IsLoggedIn bool
 			UserID     uuid.UUID
+			Flashes    []any
 		}{
 			CSRFToken:  csrf.Token(r),
 			IsLoggedIn: ok,
 			UserID:     userID,
+			Flashes:    sess.Flashes(),
 		},
 		View: data,
+	}
+
+	err = s.deps.SessionStore.Save(r, w, sess)
+	if err != nil {
+		return err
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

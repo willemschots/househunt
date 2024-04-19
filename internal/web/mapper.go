@@ -3,6 +3,8 @@ package web
 import (
 	"context"
 	"net/http"
+
+	"github.com/gorilla/sessions"
 )
 
 // mapper is a generic HTTP handler that maps requests to target
@@ -18,11 +20,12 @@ type mapper[IN, OUT any] struct {
 // it contains all relevant data because we can't know
 // in advance what we will need to construct a response.
 type result[IN, OUT any] struct {
-	s   *Server
-	r   *http.Request
-	w   http.ResponseWriter
-	in  IN
-	out OUT
+	s    *Server
+	r    *http.Request
+	w    http.ResponseWriter
+	sess *sessions.Session
+	in   IN
+	out  OUT
 }
 
 // mapBoth creates a HTTP Handler that:
@@ -109,6 +112,12 @@ func (e *mapper[IN, OUT]) response(fn func(result[IN, OUT]) error) *mapper[IN, O
 }
 
 func (e *mapper[IN, OUT]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	sess, err := sessionFromCtx(r.Context())
+	if err != nil {
+		e.s.handleError(w, err)
+		return
+	}
+
 	in, err := e.req(r)
 	if err != nil {
 		e.s.handleError(w, err)
@@ -122,11 +131,12 @@ func (e *mapper[IN, OUT]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := result[IN, OUT]{
-		s:   e.s,
-		r:   r,
-		w:   w,
-		in:  in,
-		out: out,
+		s:    e.s,
+		r:    r,
+		w:    w,
+		sess: sess,
+		in:   in,
+		out:  out,
 	}
 
 	err = e.res(result)
