@@ -3,6 +3,7 @@
 {{define "body"}}
 
 <h1>Register as an Agent</h1>
+{{ template "flash-messages" . }}
 <form action="/register" id="register-user" method="POST">
   {{ template "csrf-input" . }}
   <input type="email" name="email" placeholder="Email" required>

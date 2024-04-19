@@ -40,7 +40,7 @@ func Test_UserStories(t *testing.T) {
 			form.values.Set("password", "reallyStrongPassword1")
 
 			// TODO: This should redirect to a success page.
-			c.mustSubmitForm(t, form, assertStatusCode(t, http.StatusOK))
+			c.mustSubmitForm(t, form, assertRedirectsTo(t, "/register", http.StatusFound))
 		})
 
 		var activationURL *url.URL
@@ -61,7 +61,7 @@ func Test_UserStories(t *testing.T) {
 			}
 
 			// submit the activation form (will be done automatically by JS in real life).
-			c.mustSubmitForm(t, form, assertStatusCode(t, http.StatusOK))
+			c.mustSubmitForm(t, form, assertRedirectsTo(t, "/login", http.StatusFound))
 		})
 
 		t.Run("verify I can't access the dashboard", func(t *testing.T) {
@@ -125,7 +125,7 @@ func Test_UserStories(t *testing.T) {
 			form.values.Set("email", "agent@example.com")
 
 			// TODO: This should redirect to a success page.
-			c.mustSubmitForm(t, form, assertStatusCode(t, http.StatusOK))
+			c.mustSubmitForm(t, form, assertRedirectsTo(t, "/forgot-password", http.StatusFound))
 		})
 
 		var passwordResetURL *url.URL
