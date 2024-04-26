@@ -2,6 +2,7 @@
 <html>
 <head>
   <title>{{ template "title" .}}</title>
+
 </head>
 <body>
 
@@ -13,5 +14,7 @@
   {{ end }}
 
   {{ template "body" . }}
+
+  <script defer src="/bundle.js"></script>
 </body>
 </html>
