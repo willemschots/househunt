@@ -9,12 +9,10 @@ module.exports = {
   output: {
     path: path.resolve(__dirname, 'dist'),
     filename: 'bundle.js',
+    // serve dist directory as /static/
+    publicPath: '/static/',
   },
   devServer: {
-    static: {
-      // serve files from the dist directory (will re-inject on changes as well).
-      directory: path.join(__dirname, 'dist'),
-    },
     // watch for changes to the templates directory.
     // These files are served by our backend, so we need to reload
     // the page when they change. (See HTTP_VIEW_DIR option in cmd/server).
@@ -27,10 +25,10 @@ module.exports = {
     hot: true,
     // Enable gzip compression.
     compress: true,
-    // Proxy all requests to the backend server.
+    // Proxy all non-static requests to the backend server.
     proxy: [
       {
-        context: ['/'],
+        context: ['**', '!/static/'],
         target: 'http://localhost:8888', // As specified in docker-compose.yml
       },
     ],

@@ -11,6 +11,7 @@ import (
 	"github.com/gorilla/csrf"
 	"github.com/gorilla/schema"
 	"github.com/gorilla/sessions"
+	"github.com/willemschots/househunt/internal"
 	"github.com/willemschots/househunt/internal/auth"
 	"github.com/willemschots/househunt/internal/email"
 	"github.com/willemschots/househunt/internal/errorz"
@@ -28,6 +29,7 @@ type ServerDeps struct {
 	ViewRenderer ViewRenderer
 	AuthService  *auth.Service
 	SessionStore sessions.Store
+	DistFS       http.FileSystem
 }
 
 // ServerConfig is the configuration for the server.
@@ -173,6 +175,8 @@ func NewServer(deps *ServerDeps, cfg ServerConfig) *Server {
 	// Dashboard endpoints
 	s.loggedIn("GET /dashboard", s.staticHandler("dashboard"))
 
+	s.mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(s.deps.DistFS)))
+
 	// Wrap the mux with global middlewares.
 	csrfMW := csrf.Protect(
 		cfg.CSRFKey.SecretValue(),
@@ -220,11 +224,13 @@ func (s *Server) writeView(w http.ResponseWriter, r *http.Request, name string, 
 		View   any
 	}{
 		Global: struct {
+			Version    string
 			CSRFToken  string
 			IsLoggedIn bool
 			UserID     uuid.UUID
 			Flashes    []any
 		}{
+			Version:    internal.BuildRevision,
 			CSRFToken:  csrf.Token(r),
 			IsLoggedIn: ok,
 			UserID:     userID,

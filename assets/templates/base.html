@@ -15,6 +15,6 @@
 
   {{ template "body" . }}
 
-  <script defer src="/bundle.js"></script>
+  <script defer src="/static/bundle.js?v={{ .Global.Version }}"></script>
 </body>
 </html>

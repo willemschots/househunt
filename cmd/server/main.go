@@ -151,6 +151,7 @@ func run(ctx context.Context, w io.Writer) int {
 		ViewRenderer: viewRenderer,
 		AuthService:  authSvc,
 		SessionStore: sessionStore,
+		DistFS:       http.FS(assets.DistFS),
 	}
 
 	srv := &http.Server{
