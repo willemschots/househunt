@@ -80,6 +80,23 @@ func Test_Run(t *testing.T) {
 		}
 	}))
 
+	t.Run("ok, says it loaded templates from directory when HTTP_VIEW_DIR is provided", testEnv(func(t *testing.T) {
+		// load the templates from disk instead of using the embedded ones.
+		envForTest(t, "HTTP_VIEW_DIR", "../../assets/templates")
+
+		out := newBuffer()
+
+		ctx := cancelOnceServed(t, publicURL)
+
+		got := run(ctx, out)
+		want := 0
+		if got != want {
+			t.Fatalf("got exit code %d, want %d. logs:\n%s", got, want, out.String())
+		}
+
+		assertLog(t, out.String(), "loading templates from disk")
+	}))
+
 	t.Run("fail, invalid environment", testEnv(func(t *testing.T) {
 		envForTest(t, "HTTP_READ_TIMEOUT", "-1ms")
 
