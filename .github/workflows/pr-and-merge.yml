@@ -37,4 +37,17 @@ jobs:
         version: 'v1.56'
     - name: Verify schema dump is up to date
       run: make dump-schema && git diff --exit-code migrations/docs/schema.gen.sql
-
+  frontend:
+    runs-on: ubuntu-22.04
+    name: Build frontend
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.12.2'
+        cache: npm
+        cache-dependency-path: 'assets/package-lock.json'
+    - name: Build
+      run: make frontend

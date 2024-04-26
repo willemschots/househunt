@@ -111,6 +111,9 @@ func TestConfigFromEnv(t *testing.T) {
 				c.http.server.CSRFKey = must(krypto.ParseKey("218dbd640d2ae9bd7a81e45f1ad963ecea3027fea21b9c3b93ca3ad69915f733"))
 			},
 		},
+		"ok, non-default HTTP_VIEW_DIR": {
+			key: "HTTP_VIEW_DIR", val: "./test", mf: func(c *config) { c.http.viewDir = "./test" },
+		},
 		"ok, non-default DB_FILENAME": {
 			key: "DB_FILENAME", val: "test.db", mf: func(c *config) { c.db.file = "test.db" },
 		},

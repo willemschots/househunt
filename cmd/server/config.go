@@ -29,6 +29,7 @@ type httpConfig struct {
 	// are interpreted.
 	cookieKeys []krypto.Key
 	server     web.ServerConfig
+	viewDir    string // viewDir provides a directory to load templates from. If empty, the embedded templates are used.
 }
 
 // dbConfig is the database configuration.
@@ -67,6 +68,7 @@ func defaultConfig() config {
 			server: web.ServerConfig{
 				SecureCookie: true,
 			},
+			viewDir: "",
 		},
 		db: dbConfig{
 			file:    "househunt.db",
@@ -144,6 +146,11 @@ var envMap = map[string]envVariable{
 		required: true,
 		mapFunc: func(v string, c *config) error {
 			return confCryptoKey(v, &c.http.server.CSRFKey)
+		},
+	},
+	"HTTP_VIEW_DIR": {
+		mapFunc: func(v string, c *config) error {
+			return confString(v, &c.http.viewDir, 0, math.MaxInt64)
 		},
 	},
 	"DB_FILENAME": {

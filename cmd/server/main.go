@@ -140,11 +140,18 @@ func run(ctx context.Context, w io.Writer) int {
 	// Register UUID type for inclusion in the session values.
 	gob.Register(uuid.UUID{})
 
+	viewRenderer := view.NewFSRenderer(assets.TemplateFS)
+	if cfg.http.viewDir != "" {
+		logger.Info("loading templates from disk", "dir", cfg.http.viewDir)
+		viewRenderer = view.NewFSRenderer(os.DirFS(cfg.http.viewDir))
+	}
+
 	serverDeps := &web.ServerDeps{
 		Logger:       logger,
-		ViewRenderer: view.NewFSRenderer(assets.TemplateFS),
+		ViewRenderer: viewRenderer,
 		AuthService:  authSvc,
 		SessionStore: sessionStore,
+		DistFS:       http.FS(assets.DistFS),
 	}
 
 	srv := &http.Server{

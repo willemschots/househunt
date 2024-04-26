@@ -16,3 +16,6 @@ build: test
 
 dump-schema:
 	go run cmd/dbmigrate/*.go schema.db && sqlite3 schema.db .schema > migrations/docs/schema.gen.sql && rm schema.db
+
+frontend:
+	npm install --prefix assets && npm run --prefix assets build

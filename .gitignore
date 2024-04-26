@@ -1,2 +1,3 @@
 .localdev
 .env
+assets/node_modules

@@ -11,6 +11,14 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v4
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.12.2'
+        cache: npm
+        cache-dependency-path: 'assets/package-lock.json'
+    - name: Build Frontend
+      run: make frontend
     - name: Docker Meta
       id: meta
       uses: docker/metadata-action@v5
