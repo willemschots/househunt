@@ -98,7 +98,11 @@ func run(ctx context.Context, w io.Writer) int {
 	}
 
 	// Create emailer.
-	emailRenderer := emailview.NewFSRenderer(assets.EmailFS)
+	emailRenderer, err := emailview.NewMemRenderer(assets.EmailFS)
+	if err != nil {
+		logger.Error("failed to create email renderer", "error", err)
+		return 1
+	}
 
 	var sender email.Sender
 	switch cfg.email.driver {
@@ -140,7 +144,14 @@ func run(ctx context.Context, w io.Writer) int {
 	// Register UUID type for inclusion in the session values.
 	gob.Register(uuid.UUID{})
 
-	viewRenderer := view.NewFSRenderer(assets.TemplateFS)
+	var viewRenderer web.ViewRenderer
+
+	viewRenderer, err = view.NewMemRenderer(assets.TemplateFS)
+	if err != nil {
+		logger.Error("failed to create in memory view renderer", "error", err)
+		return 1
+	}
+
 	if cfg.http.viewDir != "" {
 		logger.Info("loading templates from disk", "dir", cfg.http.viewDir)
 		viewRenderer = view.NewFSRenderer(os.DirFS(cfg.http.viewDir))

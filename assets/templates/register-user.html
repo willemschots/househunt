@@ -2,13 +2,24 @@
 
 {{define "body"}}
 
-<h1>Register as an Agent</h1>
-{{ template "flash-messages" . }}
-<form action="/register" id="register-user" method="POST">
-  {{ template "csrf-input" . }}
-  <input type="email" name="email" placeholder="Email" required>
-  <input type="password" name="password" placeholder="Password" required>
-  <input type="submit" value="Register Account">
-</form>
+<div class="w-full h-full bg-slate-100 flex flex-wrap justify-center items-start">
+  <div class="w-full">
+    {{ template "header" . }}
+  </div>
+
+  <div class="max-w-[480px] bg-slate-50 rounded-md shadow-md p-8">
+    <h1 class="text-2xl">Register an account</h1>
+
+    {{ template "flash-messages" . }}
+
+    <form action="/register" id="register-user" method="POST" class="mt-4">
+      {{ template "csrf-input" . }}
+      <input type="email" name="email" placeholder="Email" required class="text-input">
+      <input type="password" name="password" placeholder="Password" required class="text-input mt-2">
+      <input type="submit" class="btn btn-blue mt-4" value="Register">
+    </form>
+
+  </div>
+</div>
 
 {{end}}

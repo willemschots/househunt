@@ -81,7 +81,7 @@ func NewServer(deps *ServerDeps, cfg ServerConfig) *Server {
 	}))
 
 	s.publicOnly("POST /user-activations", mapRequest(s, deps.AuthService.ActivateUser).response(func(r result[auth.EmailTokenRaw, struct{}]) error {
-		r.sess.AddFlash("Your email address has been confirmed, login below.")
+		r.sess.AddFlash("Your account has been activated, login below.")
 		err := s.deps.SessionStore.Save(r.r, r.w, r.sess)
 		if err != nil {
 			return err

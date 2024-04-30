@@ -1,4 +1,5 @@
 const path = require('path');
+const MiniCssExtractPlugin = require("mini-css-extract-plugin");
 
 // Development settings below work together with the docker-compose.yml configuration
 // to enable frontend development with live reloading and hot module replacement, while
@@ -6,6 +7,9 @@ const path = require('path');
 module.exports = {
   mode: 'development',
   entry: './main.js',
+  plugins: [new MiniCssExtractPlugin({
+    filename: 'bundle.css',
+  })],
   output: {
     path: path.resolve(__dirname, 'dist'),
     filename: 'bundle.js',
@@ -39,7 +43,7 @@ module.exports = {
         test: /\.css$/i,
         include: path.resolve(__dirname),
         exclude: /node_modules/,
-        use: ['style-loader', 'css-loader', 'postcss-loader'],
+        use: [MiniCssExtractPlugin.loader, 'css-loader', 'postcss-loader'],
       },
     ],
   },

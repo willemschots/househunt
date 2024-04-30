@@ -2,12 +2,25 @@
 
 {{define "body"}}
 
-<h1>Activating your account...</h1>
-<form action="/user-activations" id="activate-user" method="POST">
-  {{ template "csrf-input" . }}
-  <input type="hidden" name="id" value="{{ .View.ID }}">
-  <input type="hidden" name="token" value="{{ .View.Token }}">
-  <input type="submit" value="Activate Account">
-</form>
+<div class="w-full h-full bg-slate-100 flex flex-wrap justify-center items-start">
+  <div class="w-full">
+    {{ template "header" . }}
+  </div>
+
+  <div class="max-w-[480px] bg-slate-50 rounded-md shadow-md p-8">
+    <h1 class="text-2xl">Activate your acount</h1>
+
+    <p class="mt-4 text-sm">Please click the button below to activate your account.</p>
+
+    {{ template "flash-messages" . }}
+
+    <form action="/user-activations" id="activate-user" method="POST" class="mt-4">
+      {{ template "csrf-input" . }}
+      <input type="hidden" name="id" value="{{ .View.ID }}">
+      <input type="hidden" name="token" value="{{ .View.Token }}">
+      <input type="submit" class="btn btn-blue" value="Activate Account">
+    </form>
+  </div>
+</div>
 
 {{end}}

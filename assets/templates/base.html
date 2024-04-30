@@ -3,15 +3,9 @@
 <head>
   <title>{{ template "title" .}}</title>
 
+  <link rel="stylesheet" href="/static/bundle.css?v={{ .Global.Version }}">
 </head>
 <body>
-
-  {{ if .Global.IsLoggedIn }}
-  <form action="/logout" id="logout-user" method="POST">
-    {{ template "csrf-input" . }}
-    <input type="submit" value="Logout">
-  </form>
-  {{ end }}
 
   {{ template "body" . }}
 
