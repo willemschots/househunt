@@ -2,13 +2,30 @@
 
 {{define "body"}}
 
-<h1>Login</h1>
-{{ template "flash-messages" . }}
-<form action="/login" id="login-user" method="POST">
-  {{ template "csrf-input" . }}
-  <input type="email" name="email" placeholder="Email" required>
-  <input type="password" name="password" placeholder="Password" required>
-  <input type="submit" value="Login">
-</form>
+<div class="w-full h-full bg-slate-100 flex flex-wrap justify-center items-start">
+  <div class="w-full">
+    {{ template "header" . }}
+  </div>
+
+  <div class="max-w-[480px] bg-slate-50 rounded-md shadow-md p-8">
+    <h1 class="text-2xl">Login</h1>
+
+    {{ template "flash-messages" . }}
+
+    <form action="/login" id="login-user" method="POST" class="mt-4">
+      {{ template "csrf-input" . }}
+
+      <input type="email" name="email" placeholder="Email" required class="text-input">
+
+      <input type="password" name="password" placeholder="Password" required class="text-input mt-2">
+
+      <div class="flex justify-between items-center mt-4">
+        <input type="submit" class="btn btn-blue" value="Login">
+        <a href="/forgot-password" class="text-sm text-link">Forgotten password?</a>
+      </div>
+    </form>
+
+  </div>
+</div>
 
 {{end}}

@@ -1,5 +1,29 @@
 {{ define "title" }}Hello World!{{end}}
 
 {{define "body"}}
-<h1 class="text-green-500 myclass">Hello world!</h1>
+<div class="w-full h-full bg-slate-100 flex flex-wrap justify-center items-start">
+  <div class="w-full">
+    {{ template "header" . }}
+  </div>
+
+
+  <div class="max-w-[480px] bg-slate-50 rounded-md shadow-md p-8">
+    <h1 class="text-2xl font-bold"><span class="text-blue-600">This is Househunt.</span> A fully-featured example Go web application.</h1>
+
+    <p class="mt-4"><strong>This project is under active development.</strong></p>
+
+    <ul class="list-disc ml-4 mt-4">
+      <li><a class="text-link" href="https://www.willem.dev/articles/example-web-application-project/">This article</a> talks about the how, what and why.</li>
+      <li><a class="text-link" href="https://www.twitter.com/willemschots/">I'm building in public</a> on Twitter/X.</li>
+      <li><a class="text-link" href="https://www.github.com/willemschots/househunt">Check out the source code</a> on Github.</li>
+    </ul>
+    
+    <p class="mt-4">Right now the only thing that is implemented is user registration and authentication.</p>
+
+    <p class="mt-4">Feel free to try it out and play around. If you have any comments or questions, you can reach me at <a class="text-link" href="mailto:w@willem.dev">w@willem.dev</a>.</p>
+
+    <p class="mt-4">- Willem Schots</p>
+  </div>
+
+</div>
 {{end}}

@@ -2,6 +2,19 @@
 
 {{define "body"}}
 
-<h1>Dashboard</h1>
+<div class="w-full h-full bg-slate-100 flex flex-wrap justify-center items-start">
+  <div class="w-full">
+    {{ template "header" . }}
+  </div>
+
+  <div class="max-w-[480px] bg-slate-50 rounded-md shadow-md p-8">
+    <h1 class="text-2xl">Super secret dashboard</h1>
+
+    <p class="mt-4">Only visible to authenticated users 🤫</p>
+
+    <p class="mt-4">Nothing further to do yet though. Check back later.</p>
+
+  </div>
+</div>
 
 {{end}}

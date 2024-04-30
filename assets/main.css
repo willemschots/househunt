@@ -2,3 +2,42 @@
 @tailwind components;
 @tailwind utilities;
 
+body,
+html {
+  @apply w-full h-full;
+}
+
+.btn {
+  @apply uppercase font-bold text-sm px-2 py-1 tracking-wide cursor-pointer;
+}
+
+.btn-text-only {
+  @apply text-blue-600;
+}
+
+.btn-text-only:hover,
+.btn-text-only:focus {
+  @apply text-blue-800;
+}
+
+.btn-blue {
+  @apply bg-blue-600 text-slate-50  rounded-md;
+}
+
+.btn-blue:hover,
+.btn-blue:focus {
+  @apply bg-blue-800;
+}
+
+.text-link {
+  @apply text-blue-600 underline underline-offset-2;
+}
+
+.text-link:hover,
+.text-link:focus {
+  @apply text-blue-800;
+}
+
+.text-input {
+  @apply border-slate-200 rounded-md border bg-slate-50 block px-2 py-1 text-slate-800;
+}

@@ -7,13 +7,6 @@
 </head>
 <body>
 
-  {{ if .Global.IsLoggedIn }}
-  <form action="/logout" id="logout-user" method="POST">
-    {{ template "csrf-input" . }}
-    <input type="submit" value="Logout">
-  </form>
-  {{ end }}
-
   {{ template "body" . }}
 
   <script defer src="/static/bundle.js?v={{ .Global.Version }}"></script>
