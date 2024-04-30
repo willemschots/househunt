@@ -98,7 +98,11 @@ func run(ctx context.Context, w io.Writer) int {
 	}
 
 	// Create emailer.
-	emailRenderer := emailview.NewFSRenderer(assets.EmailFS)
+	emailRenderer, err := emailview.NewMemRenderer(assets.EmailFS)
+	if err != nil {
+		logger.Error("failed to create email renderer", "error", err)
+		return 1
+	}
 
 	var sender email.Sender
 	switch cfg.email.driver {
