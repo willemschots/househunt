@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/gorilla/sessions"
+	gorillaSess "github.com/gorilla/sessions"
 	"github.com/willemschots/househunt/assets"
 	"github.com/willemschots/househunt/internal"
 	"github.com/willemschots/househunt/internal/auth"
@@ -27,6 +27,7 @@ import (
 	emailview "github.com/willemschots/househunt/internal/email/view"
 	"github.com/willemschots/househunt/internal/krypto"
 	"github.com/willemschots/househunt/internal/web"
+	"github.com/willemschots/househunt/internal/web/sessions"
 	"github.com/willemschots/househunt/internal/web/view"
 	"github.com/willemschots/househunt/migrations"
 	"golang.org/x/sync/errgroup"
@@ -136,7 +137,7 @@ func run(ctx context.Context, w io.Writer) int {
 	for i, key := range cfg.http.cookieKeys {
 		keysAsBytes[i] = key.SecretValue()
 	}
-	sessionStore := sessions.NewCookieStore(keysAsBytes...)
+	sessionStore := gorillaSess.NewCookieStore(keysAsBytes...)
 	sessionStore.Options.Secure = cfg.http.server.SecureCookie
 	sessionStore.Options.HttpOnly = true
 	sessionStore.MaxAge(7 * 24 * 60 * 60) // 1 week
@@ -161,7 +162,7 @@ func run(ctx context.Context, w io.Writer) int {
 		Logger:       logger,
 		ViewRenderer: viewRenderer,
 		AuthService:  authSvc,
-		SessionStore: sessionStore,
+		SessionStore: sessions.NewStore(sessionStore),
 		DistFS:       http.FS(assets.DistFS),
 	}
 

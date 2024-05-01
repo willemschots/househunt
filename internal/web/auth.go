@@ -26,7 +26,7 @@ func (s *Server) publicOnly(pattern string, handler http.Handler) {
 			return
 		}
 
-		_, ok := sessionUserID(sess)
+		_, ok := sess.UserID()
 		if ok {
 			s.handleError(w, r, errorz.ErrNotFound)
 			return
@@ -44,7 +44,7 @@ func (s *Server) loggedIn(pattern string, handler http.Handler) {
 			return
 		}
 
-		_, ok := sessionUserID(sess)
+		_, ok := sess.UserID()
 		if !ok {
 			s.handleError(w, r, errorz.ErrNotFound)
 			return

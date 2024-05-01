@@ -5,30 +5,29 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/gorilla/sessions"
+	"github.com/willemschots/househunt/internal/web/sessions"
 )
 
-const sessionCookieName = "hh-session"
-
 // session is a middleware that creates a session and injects it in the context.
-func (s *Server) session(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		sess, err := s.deps.SessionStore.Get(r, sessionCookieName)
-		if err != nil {
-			s.handleError(w, r, err)
-			return
-		}
+func sessionMiddleware(srv *Server) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			sess, err := srv.deps.SessionStore.Get(r)
+			if err != nil {
+				srv.handleError(w, r, err)
+				return
+			}
 
-		err = s.deps.SessionStore.Save(r, w, sess)
-		if err != nil {
-			s.handleError(w, r, err)
-			return
-		}
+			err = srv.deps.SessionStore.Save(r, w, sess)
+			if err != nil {
+				srv.handleError(w, r, err)
+				return
+			}
 
-		ctx := ctxWithSession(r.Context(), sess)
-		next.ServeHTTP(w, r.WithContext(ctx))
-
-	})
+			ctx := ctxWithSession(r.Context(), sess)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
 }
 
 type ctxKey string

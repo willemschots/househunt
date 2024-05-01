@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/gorilla/sessions"
+	"github.com/willemschots/househunt/internal/web/sessions"
 )
 
 // mapper is a generic HTTP handler that maps:
@@ -39,9 +39,8 @@ type result[IN, OUT any] struct {
 
 func (m *mapper[IN, OUT]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s := shared{
-		r:    r,
-		sess: nil,
-		w:    w,
+		r: r,
+		w: w,
 	}
 
 	sess, err := sessionFromCtx(r.Context())

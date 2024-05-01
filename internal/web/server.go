@@ -10,12 +10,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/csrf"
 	"github.com/gorilla/schema"
-	"github.com/gorilla/sessions"
 	"github.com/willemschots/househunt/internal"
 	"github.com/willemschots/househunt/internal/auth"
 	"github.com/willemschots/househunt/internal/email"
 	"github.com/willemschots/househunt/internal/errorz"
 	"github.com/willemschots/househunt/internal/krypto"
+	"github.com/willemschots/househunt/internal/web/sessions"
 )
 
 // ViewRenderer renders named views with the given data.
@@ -28,7 +28,7 @@ type ServerDeps struct {
 	Logger       *slog.Logger
 	ViewRenderer ViewRenderer
 	AuthService  *auth.Service
-	SessionStore sessions.Store
+	SessionStore *sessions.Store
 	DistFS       http.FileSystem
 }
 
@@ -75,7 +75,7 @@ func NewServer(deps *ServerDeps, cfg ServerConfig) *Server {
 				return err
 			}
 
-			http.Redirect(r.w, r.r, "/register", http.StatusFound)
+			s.writeRedirect(r.w, r.r, "/register", http.StatusFound)
 			return nil
 		}
 
@@ -105,7 +105,7 @@ func NewServer(deps *ServerDeps, cfg ServerConfig) *Server {
 				return err
 			}
 
-			http.Redirect(r.w, r.r, "/login", http.StatusFound)
+			s.writeRedirect(r.w, r.r, "/login", http.StatusFound)
 			return nil
 		}
 
@@ -134,13 +134,13 @@ func NewServer(deps *ServerDeps, cfg ServerConfig) *Server {
 				MaxAge: -1,
 			})
 
-			setSessionUserID(r.sess, r.out.ID)
+			r.sess.SetUserID(r.out.ID)
 			err := s.deps.SessionStore.Save(r.r, r.w, r.sess)
 			if err != nil {
 				return err
 			}
 
-			http.Redirect(r.w, r.r, "/dashboard", http.StatusFound)
+			s.writeRedirect(r.w, r.r, "/dashboard", http.StatusFound)
 			return nil
 		}
 
@@ -157,14 +157,14 @@ func NewServer(deps *ServerDeps, cfg ServerConfig) *Server {
 				return
 			}
 
-			deleteSessionUserID(sess)
+			sess.DeleteUserID()
 			err = s.deps.SessionStore.Save(r, w, sess)
 			if err != nil {
 				s.handleError(w, r, err)
 				return
 			}
 
-			http.Redirect(w, r, "/", http.StatusFound)
+			s.writeRedirect(w, r, "/", http.StatusFound)
 		})
 
 		s.loggedIn(route, h)
@@ -193,7 +193,7 @@ func NewServer(deps *ServerDeps, cfg ServerConfig) *Server {
 				return err
 			}
 
-			http.Redirect(r.w, r.r, "/forgot-password", http.StatusFound)
+			s.writeRedirect(r.w, r.r, "/forgot-password", http.StatusFound)
 			return nil
 		}
 
@@ -224,7 +224,7 @@ func NewServer(deps *ServerDeps, cfg ServerConfig) *Server {
 				return err
 			}
 
-			http.Redirect(r.w, r.r, "/login", http.StatusFound)
+			s.writeRedirect(r.w, r.r, "/login", http.StatusFound)
 			return nil
 		}
 
@@ -249,7 +249,7 @@ func NewServer(deps *ServerDeps, cfg ServerConfig) *Server {
 
 	middlewares := []func(http.Handler) http.Handler{
 		csrfMW,
-		s.session,
+		sessionMiddleware(s),
 	}
 	s.handler = s.mux
 	for i := len(middlewares) - 1; i >= 0; i-- {
@@ -263,13 +263,17 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.handler.ServeHTTP(w, r)
 }
 
+func (s *Server) writeRedirect(w http.ResponseWriter, r *http.Request, url string, code int) {
+	http.Redirect(w, r, url, code)
+}
+
 func (s *Server) writeView(w http.ResponseWriter, r *http.Request, name string, data any) error {
 	sess, err := sessionFromCtx(r.Context())
 	if err != nil {
 		return err
 	}
 
-	userID, ok := sessionUserID(sess)
+	userID, ok := sess.UserID()
 
 	viewData := struct {
 		Global any
