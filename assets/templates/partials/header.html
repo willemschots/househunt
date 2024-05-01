@@ -3,7 +3,7 @@
 <div class="bg-slate-50 flex justify-between py-2 px-4 shadow-sm">
   <a href="/" class="text-blue-600 font-bold uppercase tracking-wide">Househunt</a>
   <div>
-  {{ if .Global.IsLoggedIn }}
+  {{ if .IsLoggedIn }}
     <form action="/logout" id="logout-user" method="POST">
       {{ template "csrf-input" . }}
       <input type="submit" class="btn btn-text-only" value="Logout">

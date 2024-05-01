@@ -12,11 +12,7 @@ import (
 // newViewHandler creates a HTTP Handler that renders the view with the given name.
 func newViewHandler(s *Server, name string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		err := s.writeView(w, r, name, nil)
-		if err != nil {
-			s.handleError(w, r, err)
-			return
-		}
+		s.writeView(w, r, name, nil)
 	})
 }
 
@@ -33,10 +29,10 @@ func newHandler[IN, OUT any](srv *Server, targetFunc func(context.Context, IN) (
 		},
 		targetFunc: targetFunc,
 		onSuccess: func(c result[IN, OUT]) error {
-			return defaultSuccess[IN, OUT](srv, c)
+			return defaultSuccess(srv, c)
 		},
 		onFail: func(s shared, err error) {
-			srv.handleError(s.w, s.r, err)
+			srv.writeError(s.w, s.r, err)
 		},
 	}
 }
@@ -64,7 +60,7 @@ func newInputHandler[IN any](srv *Server, targetFunc func(context.Context, IN) e
 			return defaultSuccess[IN, struct{}](srv, c)
 		},
 		onFail: func(s shared, err error) {
-			srv.handleError(s.w, s.r, err)
+			srv.writeError(s.w, s.r, err)
 		},
 	}
 }

@@ -14,13 +14,7 @@ func sessionMiddleware(srv *Server) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			sess, err := srv.deps.SessionStore.Get(r)
 			if err != nil {
-				srv.handleError(w, r, err)
-				return
-			}
-
-			err = srv.deps.SessionStore.Save(r, w, sess)
-			if err != nil {
-				srv.handleError(w, r, err)
+				srv.writeError(w, r, err)
 				return
 			}
 

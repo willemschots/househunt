@@ -33,3 +33,14 @@ func ParseAddress(raw string) (Address, error) {
 
 	return Address(addr.Address), nil
 }
+
+func (a *Address) UnmarshalText(text []byte) error {
+	addr, err := ParseAddress(string(text))
+	if err != nil {
+		return err
+	}
+
+	*a = addr
+
+	return nil
+}

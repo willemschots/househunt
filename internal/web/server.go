@@ -7,10 +7,8 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/google/uuid"
 	"github.com/gorilla/csrf"
 	"github.com/gorilla/schema"
-	"github.com/willemschots/househunt/internal"
 	"github.com/willemschots/househunt/internal/auth"
 	"github.com/willemschots/househunt/internal/email"
 	"github.com/willemschots/househunt/internal/errorz"
@@ -38,6 +36,10 @@ type ServerConfig struct {
 	SecureCookie bool
 }
 
+// Server implements the server for the application.
+// Generally:
+// - Methods prefixed with "write" write a full response including headers and status code.
+// - Methods prefixed with "render" only write a response body.
 type Server struct {
 	deps    *ServerDeps
 	mux     *http.ServeMux
@@ -68,13 +70,11 @@ func NewServer(deps *ServerDeps, cfg ServerConfig) *Server {
 	{
 		const route = "POST /register"
 		h := newInputHandler(s, deps.AuthService.RegisterUser)
+		h.onFail = func(r shared, err error) {
+			s.writeErrorView(r.w, r.r, "register-user", err)
+		}
 		h.onSuccess = func(r result[auth.Credentials, struct{}]) error {
 			r.sess.AddFlash("Thank you for your registration. Please follow the instructions that have arrived in your inbox.")
-			err := s.deps.SessionStore.Save(r.r, r.w, r.sess)
-			if err != nil {
-				return err
-			}
-
 			s.writeRedirect(r.w, r.r, "/register", http.StatusFound)
 			return nil
 		}
@@ -90,7 +90,8 @@ func NewServer(deps *ServerDeps, cfg ServerConfig) *Server {
 			return token, nil
 		})
 		h.onSuccess = func(r result[auth.EmailTokenRaw, auth.EmailTokenRaw]) error {
-			return s.writeView(r.w, r.r, "activate-user", r.out)
+			s.writeView(r.w, r.r, "activate-user", r.out)
+			return nil
 		}
 
 		s.publicOnly(route, h)
@@ -98,13 +99,11 @@ func NewServer(deps *ServerDeps, cfg ServerConfig) *Server {
 	{
 		const route = "POST /user-activations"
 		h := newInputHandler(s, deps.AuthService.ActivateUser)
+		h.onFail = func(r shared, err error) {
+			s.writeErrorView(r.w, r.r, "activate-user", err)
+		}
 		h.onSuccess = func(r result[auth.EmailTokenRaw, struct{}]) error {
 			r.sess.AddFlash("Your account has been activated, login below.")
-			err := s.deps.SessionStore.Save(r.r, r.w, r.sess)
-			if err != nil {
-				return err
-			}
-
 			s.writeRedirect(r.w, r.r, "/login", http.StatusFound)
 			return nil
 		}
@@ -119,6 +118,9 @@ func NewServer(deps *ServerDeps, cfg ServerConfig) *Server {
 	{
 		const route = "POST /login"
 		h := newHandler(s, deps.AuthService.Authenticate)
+		h.onFail = func(r shared, err error) {
+			s.writeErrorView(r.w, r.r, "login-user", err)
+		}
 		h.onSuccess = func(r result[auth.Credentials, auth.User]) error {
 			// If we get here, the user has been authenticated.
 
@@ -135,11 +137,6 @@ func NewServer(deps *ServerDeps, cfg ServerConfig) *Server {
 			})
 
 			r.sess.SetUserID(r.out.ID)
-			err := s.deps.SessionStore.Save(r.r, r.w, r.sess)
-			if err != nil {
-				return err
-			}
-
 			s.writeRedirect(r.w, r.r, "/dashboard", http.StatusFound)
 			return nil
 		}
@@ -153,17 +150,11 @@ func NewServer(deps *ServerDeps, cfg ServerConfig) *Server {
 		h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			sess, err := sessionFromCtx(r.Context())
 			if err != nil {
-				s.handleError(w, r, err)
+				s.writeError(w, r, err)
 				return
 			}
 
 			sess.DeleteUserID()
-			err = s.deps.SessionStore.Save(r, w, sess)
-			if err != nil {
-				s.handleError(w, r, err)
-				return
-			}
-
 			s.writeRedirect(w, r, "/", http.StatusFound)
 		})
 
@@ -186,13 +177,11 @@ func NewServer(deps *ServerDeps, cfg ServerConfig) *Server {
 			s.deps.AuthService.RequestPasswordReset(ctx, reset.Email)
 			return nil
 		})
+		h.onFail = func(r shared, err error) {
+			s.writeErrorView(r.w, r.r, "forgot-password", err)
+		}
 		h.onSuccess = func(r result[passwordReset, struct{}]) error {
 			r.sess.AddFlash("Check your inbox for instructions to reset your password.")
-			err := s.deps.SessionStore.Save(r.r, r.w, r.sess)
-			if err != nil {
-				return err
-			}
-
 			s.writeRedirect(r.w, r.r, "/forgot-password", http.StatusFound)
 			return nil
 		}
@@ -208,7 +197,8 @@ func NewServer(deps *ServerDeps, cfg ServerConfig) *Server {
 			return token, nil
 		})
 		h.onSuccess = func(r result[auth.EmailTokenRaw, auth.EmailTokenRaw]) error {
-			return s.writeView(r.w, r.r, "reset-password", r.out)
+			s.writeView(r.w, r.r, "reset-password", r.out)
+			return nil
 		}
 
 		s.publicOnly(route, h)
@@ -217,13 +207,11 @@ func NewServer(deps *ServerDeps, cfg ServerConfig) *Server {
 	{
 		const route = "POST /password-resets"
 		h := newInputHandler(s, deps.AuthService.ResetPassword)
+		h.onFail = func(r shared, err error) {
+			s.writeErrorView(r.w, r.r, "reset-password", err)
+		}
 		h.onSuccess = func(r result[auth.NewPassword, struct{}]) error {
 			r.sess.AddFlash("Your password was reset, login with your new password below")
-			err := s.deps.SessionStore.Save(r.r, r.w, r.sess)
-			if err != nil {
-				return err
-			}
-
 			s.writeRedirect(r.w, r.r, "/login", http.StatusFound)
 			return nil
 		}
@@ -263,60 +251,86 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.handler.ServeHTTP(w, r)
 }
 
+// preWrite should always be called before writing a response, the returned value indicates
+// if it was successful.
+func (s *Server) preWrite(w http.ResponseWriter, r *http.Request) bool {
+	sess, err := sessionFromCtx(r.Context())
+	if err != nil {
+		s.deps.Logger.Error("failed to get session from context", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return false
+	}
+
+	if sess.NeedsSave() {
+		err = s.deps.SessionStore.Save(r, w, sess)
+		if err != nil {
+			s.deps.Logger.Error("failed to save session", "error", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return false
+		}
+	}
+
+	return true
+}
+
 func (s *Server) writeRedirect(w http.ResponseWriter, r *http.Request, url string, code int) {
+	if !s.preWrite(w, r) {
+		return
+	}
+
 	http.Redirect(w, r, url, code)
 }
 
-func (s *Server) writeView(w http.ResponseWriter, r *http.Request, name string, data any) error {
-	sess, err := sessionFromCtx(r.Context())
+func (s *Server) writeView(w http.ResponseWriter, r *http.Request, name string, data any) {
+	vd := s.prepViewData(r, w, data)
+	if vd == nil {
+		return
+	}
+
+	if !s.preWrite(w, r) {
+		return
+	}
+
+	err := s.renderView(w, name, vd)
 	if err != nil {
-		return err
+		s.deps.Logger.Error("failed to render view", "error", err)
 	}
-
-	userID, ok := sess.UserID()
-
-	viewData := struct {
-		Global any
-		View   any
-	}{
-		Global: struct {
-			Version    string
-			CSRFToken  string
-			IsLoggedIn bool
-			UserID     uuid.UUID
-			Flashes    []any
-		}{
-			Version:    internal.BuildRevision,
-			CSRFToken:  csrf.Token(r),
-			IsLoggedIn: ok,
-			UserID:     userID,
-			Flashes:    sess.Flashes(),
-		},
-		View: data,
-	}
-
-	err = s.deps.SessionStore.Save(r, w, sess)
-	if err != nil {
-		return err
-	}
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	return s.deps.ViewRenderer.Render(w, name, viewData)
 }
 
-func (s *Server) handleError(w http.ResponseWriter, r *http.Request, err error) {
-	// TODO: Properly handle other errors.
+func (s *Server) writeErrorView(w http.ResponseWriter, r *http.Request, name string, err error) {
+	vd := s.prepViewData(r, w, nil)
+	if vd == nil {
+		return
+	}
+
+	if !s.preWrite(w, r) {
+		return
+	}
+
 	if errors.Is(err, errorz.ErrNotFound) {
-		http.Error(w, "not found", http.StatusNotFound)
+		w.WriteHeader(http.StatusNotFound)
+		s.renderView(w, name, vd)
 		return
 	}
 
 	var invalidInput errorz.InvalidInput
 	if errors.As(err, &invalidInput) {
-		http.Error(w, "invalid input", http.StatusBadRequest)
+		vd.InputErrors = invalidInput
+		w.WriteHeader(http.StatusBadRequest)
+		s.renderView(w, name, vd)
 		return
 	}
 
 	s.deps.Logger.Error("internal server error", "url", r.URL.String(), "error", err)
-	http.Error(w, "internal server error", http.StatusInternalServerError)
+	w.WriteHeader(http.StatusInternalServerError)
+	s.renderView(w, name, vd)
+}
+
+func (s *Server) writeError(w http.ResponseWriter, r *http.Request, err error) {
+	s.writeErrorView(w, r, "error", err)
+}
+
+func (s *Server) renderView(w http.ResponseWriter, name string, vd *viewData) error {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	return s.deps.ViewRenderer.Render(w, name, vd)
 }
