@@ -3,8 +3,6 @@ package web
 import (
 	"net/http"
 
-	"github.com/google/uuid"
-	"github.com/gorilla/sessions"
 	"github.com/willemschots/househunt/internal/errorz"
 )
 
@@ -52,17 +50,4 @@ func (s *Server) loggedIn(pattern string, handler http.Handler) {
 
 		handler.ServeHTTP(w, r)
 	}))
-}
-
-func setSessionUserID(sess *sessions.Session, userID uuid.UUID) {
-	sess.Values["userID"] = userID
-}
-
-func deleteSessionUserID(sess *sessions.Session) {
-	delete(sess.Values, "userID")
-}
-
-func sessionUserID(sess *sessions.Session) (uuid.UUID, bool) {
-	userID, ok := sess.Values["userID"].(uuid.UUID)
-	return userID, ok
 }

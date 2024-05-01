@@ -291,10 +291,7 @@ func (s *Server) writeView(w http.ResponseWriter, r *http.Request, name string, 
 		return
 	}
 
-	err := s.renderView(w, name, vd)
-	if err != nil {
-		s.deps.Logger.Error("failed to render view", "error", err)
-	}
+	s.renderView(w, name, vd)
 }
 
 func (s *Server) writeErrorView(w http.ResponseWriter, r *http.Request, name string, err error) {
@@ -330,7 +327,10 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 	s.writeErrorView(w, r, "error", err)
 }
 
-func (s *Server) renderView(w http.ResponseWriter, name string, vd *viewData) error {
+func (s *Server) renderView(w http.ResponseWriter, name string, vd *viewData) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	return s.deps.ViewRenderer.Render(w, name, vd)
+	err := s.deps.ViewRenderer.Render(w, name, vd)
+	if err != nil {
+		s.deps.Logger.Error("failed to render view", "error", err)
+	}
 }
