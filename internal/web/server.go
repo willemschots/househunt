@@ -52,125 +52,182 @@ func NewServer(deps *ServerDeps, cfg ServerConfig) *Server {
 		decoder: schema.NewDecoder(),
 	}
 
-	// Most non-static endpoints below are created using the mapBoth, mapRequest or mapResponse functions.
+	// Most non-static endpoints below are created using the newHandler functions.
 	// These functions return handlers that automatically map between HTTP requests, target functions and HTTP responses.
 	// The request mapping and response writing is customizable.
 
+	// Homepage endpoint.
 	s.public("GET /{$}", s.staticHandler("hello-world"))
 
 	// Register user endpoints.
-	s.publicOnly("GET /register", s.staticHandler("register-user"))
-	s.publicOnly("POST /register", mapRequest(s, deps.AuthService.RegisterUser).response(func(r result[auth.Credentials, struct{}]) error {
-		r.sess.AddFlash("Thank you for your registration. Please follow the instructions that have arrived in your inbox.")
-		err := s.deps.SessionStore.Save(r.r, r.w, r.sess)
-		if err != nil {
-			return err
-		}
-
-		http.Redirect(r.w, r.r, "/register", http.StatusFound)
-		return nil
-	}))
-
-	// Activate user endpoints.
-	forwardRawToken := func(ctx context.Context, token auth.EmailTokenRaw) (auth.EmailTokenRaw, error) {
-		return token, nil
+	{
+		s.publicOnly("GET /register", s.staticHandler("register-user"))
 	}
+	{
+		const route = "POST /register"
+		h := newInputHandler(s, deps.AuthService.RegisterUser)
+		h.onSuccess(func(r result[auth.Credentials, struct{}]) error {
+			r.sess.AddFlash("Thank you for your registration. Please follow the instructions that have arrived in your inbox.")
+			err := r.s.deps.SessionStore.Save(r.r, r.w, r.sess)
+			if err != nil {
+				return err
+			}
 
-	s.publicOnly("GET /user-activations", mapBoth(s, forwardRawToken).response(func(r result[auth.EmailTokenRaw, auth.EmailTokenRaw]) error {
-		return s.writeView(r.w, r.r, "activate-user", r.out)
-	}))
-
-	s.publicOnly("POST /user-activations", mapRequest(s, deps.AuthService.ActivateUser).response(func(r result[auth.EmailTokenRaw, struct{}]) error {
-		r.sess.AddFlash("Your account has been activated, login below.")
-		err := s.deps.SessionStore.Save(r.r, r.w, r.sess)
-		if err != nil {
-			return err
-		}
-
-		http.Redirect(r.w, r.r, "/login", http.StatusFound)
-		return nil
-	}))
-
-	// Login user endpoints
-	s.publicOnly("GET /login", s.staticHandler("login-user"))
-	s.publicOnly("POST /login", mapBoth(s, deps.AuthService.Authenticate).response(func(r result[auth.Credentials, auth.User]) error {
-		// If we get here, the user has been authenticated.
-
-		// We clear the CSRF token to provide defense in depth against fixation attacks.
-		// If an attacker somehow gains access to the CSRF token before the user logged in, it will
-		// be worthless after the user logs in.
-		// See this link for more information:
-		// https://security.stackexchange.com/questions/209993/csrf-token-unique-per-user-session-why
-		//
-		// A new CSRF token will be generated on the next GET request after the redirect.
-		http.SetCookie(r.w, &http.Cookie{
-			Name:   csrfTokenCookieName,
-			MaxAge: -1,
+			http.Redirect(r.w, r.r, "/register", http.StatusFound)
+			return nil
 		})
 
-		setSessionUserID(r.sess, r.out.ID)
-		err := s.deps.SessionStore.Save(r.r, r.w, r.sess)
-		if err != nil {
-			return err
-		}
-
-		http.Redirect(r.w, r.r, "/dashboard", http.StatusFound)
-		return nil
-	}))
-
-	// Logout user endpoint
-	s.loggedIn("POST /logout", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		sess, err := sessionFromCtx(r.Context())
-		if err != nil {
-			s.handleError(w, err)
-			return
-		}
-
-		deleteSessionUserID(sess)
-		err = s.deps.SessionStore.Save(r, w, sess)
-		if err != nil {
-			s.handleError(w, err)
-			return
-		}
-
-		http.Redirect(w, r, "/", http.StatusFound)
-	}))
-
-	// Reset password endpoints
-	s.publicOnly("GET /forgot-password", s.staticHandler("forgot-password"))
-
-	type passwordReset struct {
-		Email email.Address
+		s.publicOnly(route, h)
 	}
 
-	s.publicOnly("POST /forgot-password", mapRequest(s, func(ctx context.Context, reset passwordReset) error {
-		s.deps.AuthService.RequestPasswordReset(ctx, reset.Email)
-		return nil
-	}).response(func(r result[passwordReset, struct{}]) error {
-		r.sess.AddFlash("Check your inbox for instructions to reset your password.")
-		err := s.deps.SessionStore.Save(r.r, r.w, r.sess)
-		if err != nil {
-			return err
+	// Activate user endpoints.
+	{
+		const route = "GET /user-activations"
+		h := newHandler(s, func(ctx context.Context, token auth.EmailTokenRaw) (auth.EmailTokenRaw, error) {
+			// this target function ensures the input is validated before it's forwared to the view.
+			return token, nil
+		})
+		h.onSuccess(func(r result[auth.EmailTokenRaw, auth.EmailTokenRaw]) error {
+			return r.s.writeView(r.w, r.r, "activate-user", r.out)
+		})
+
+		s.publicOnly(route, h)
+	}
+	{
+		const route = "POST /user-activations"
+		h := newInputHandler(s, deps.AuthService.ActivateUser)
+		h.onSuccess(func(r result[auth.EmailTokenRaw, struct{}]) error {
+			r.sess.AddFlash("Your account has been activated, login below.")
+			err := r.s.deps.SessionStore.Save(r.r, r.w, r.sess)
+			if err != nil {
+				return err
+			}
+
+			http.Redirect(r.w, r.r, "/login", http.StatusFound)
+			return nil
+		})
+
+		s.publicOnly(route, h)
+	}
+
+	// Login user endpoints
+	{
+		s.publicOnly("GET /login", s.staticHandler("login-user"))
+	}
+	{
+		const route = "POST /login"
+		h := newHandler(s, deps.AuthService.Authenticate)
+		h.onSuccess(func(r result[auth.Credentials, auth.User]) error {
+			// If we get here, the user has been authenticated.
+
+			// We clear the CSRF token to provide defense in depth against fixation attacks.
+			// If an attacker somehow gains access to the CSRF token before the user logged in, it will
+			// be worthless after the user logs in.
+			// See this link for more information:
+			// https://security.stackexchange.com/questions/209993/csrf-token-unique-per-user-session-why
+			//
+			// A new CSRF token will be generated on the next GET request after the redirect.
+			http.SetCookie(r.w, &http.Cookie{
+				Name:   csrfTokenCookieName,
+				MaxAge: -1,
+			})
+
+			setSessionUserID(r.sess, r.out.ID)
+			err := r.s.deps.SessionStore.Save(r.r, r.w, r.sess)
+			if err != nil {
+				return err
+			}
+
+			http.Redirect(r.w, r.r, "/dashboard", http.StatusFound)
+			return nil
+		})
+
+		s.publicOnly(route, h)
+	}
+
+	// Logout user endpoint
+	{
+		const route = "POST /logout"
+		h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			sess, err := sessionFromCtx(r.Context())
+			if err != nil {
+				s.handleError(w, r, err)
+				return
+			}
+
+			deleteSessionUserID(sess)
+			err = s.deps.SessionStore.Save(r, w, sess)
+			if err != nil {
+				s.handleError(w, r, err)
+				return
+			}
+
+			http.Redirect(w, r, "/", http.StatusFound)
+		})
+
+		s.loggedIn(route, h)
+	}
+
+	// Request password reset endpoints
+	{
+		s.publicOnly("GET /forgot-password", s.staticHandler("forgot-password"))
+	}
+	{
+		const route = "POST /forgot-password"
+
+		type passwordReset struct {
+			Email email.Address
 		}
 
-		http.Redirect(r.w, r.r, "/forgot-password", http.StatusFound)
-		return nil
-	}))
+		h := newInputHandler(s, func(ctx context.Context, reset passwordReset) error {
+			// Need to adapt because RequestPasswordReset only accepts an email address, not a struct.
+			s.deps.AuthService.RequestPasswordReset(ctx, reset.Email)
+			return nil
+		})
+		h.onSuccess(func(r result[passwordReset, struct{}]) error {
+			r.sess.AddFlash("Check your inbox for instructions to reset your password.")
+			err := r.s.deps.SessionStore.Save(r.r, r.w, r.sess)
+			if err != nil {
+				return err
+			}
 
-	s.publicOnly("GET /password-resets", mapBoth(s, forwardRawToken).response(func(r result[auth.EmailTokenRaw, auth.EmailTokenRaw]) error {
-		return s.writeView(r.w, r.r, "reset-password", r.out)
-	}))
+			http.Redirect(r.w, r.r, "/forgot-password", http.StatusFound)
+			return nil
+		})
 
-	s.publicOnly("POST /password-resets", mapRequest(s, deps.AuthService.ResetPassword).response(func(r result[auth.NewPassword, struct{}]) error {
-		r.sess.AddFlash("Your password was reset, login with your new password below")
-		err := s.deps.SessionStore.Save(r.r, r.w, r.sess)
-		if err != nil {
-			return err
-		}
+		s.publicOnly(route, h)
+	}
 
-		http.Redirect(r.w, r.r, "/login", http.StatusFound)
-		return nil
-	}))
+	// Reset password endpoints
+	{
+		const route = "GET /password-resets"
+		h := newHandler(s, func(ctx context.Context, token auth.EmailTokenRaw) (auth.EmailTokenRaw, error) {
+			// this target function ensures the input is validated before it's forwared to the view.
+			return token, nil
+		})
+		h.onSuccess(func(r result[auth.EmailTokenRaw, auth.EmailTokenRaw]) error {
+			return r.s.writeView(r.w, r.r, "reset-password", r.out)
+		})
+
+		s.publicOnly(route, h)
+	}
+
+	{
+		const route = "POST /password-resets"
+		h := newInputHandler(s, deps.AuthService.ResetPassword)
+		h.onSuccess(func(r result[auth.NewPassword, struct{}]) error {
+			r.sess.AddFlash("Your password was reset, login with your new password below")
+			err := r.s.deps.SessionStore.Save(r.r, r.w, r.sess)
+			if err != nil {
+				return err
+			}
+
+			http.Redirect(r.w, r.r, "/login", http.StatusFound)
+			return nil
+		})
+
+		s.publicOnly(route, h)
+	}
 
 	// Dashboard endpoints
 	s.loggedIn("GET /dashboard", s.staticHandler("dashboard"))
@@ -205,7 +262,7 @@ func (s *Server) staticHandler(name string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		err := s.writeView(w, r, name, nil)
 		if err != nil {
-			s.handleError(w, err)
+			s.handleError(w, r, err)
 			return
 		}
 	}
@@ -248,13 +305,19 @@ func (s *Server) writeView(w http.ResponseWriter, r *http.Request, name string, 
 	return s.deps.ViewRenderer.Render(w, name, viewData)
 }
 
-func (s *Server) handleError(w http.ResponseWriter, err error) {
-	s.deps.Logger.Error("server error", "error", err)
+func (s *Server) handleError(w http.ResponseWriter, r *http.Request, err error) {
 	// TODO: Properly handle other errors.
 	if errors.Is(err, errorz.ErrNotFound) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
 
-	panic(err)
+	var invalidInput errorz.InvalidInput
+	if errors.As(err, &invalidInput) {
+		http.Error(w, "invalid input", http.StatusBadRequest)
+		return
+	}
+
+	s.deps.Logger.Error("internal server error", "url", r.URL.String(), "error", err)
+	http.Error(w, "internal server error", http.StatusInternalServerError)
 }

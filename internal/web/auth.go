@@ -22,13 +22,13 @@ func (s *Server) publicOnly(pattern string, handler http.Handler) {
 	s.mux.Handle(pattern, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sess, err := sessionFromCtx(r.Context())
 		if err != nil {
-			s.handleError(w, err)
+			s.handleError(w, r, err)
 			return
 		}
 
 		_, ok := sessionUserID(sess)
 		if ok {
-			s.handleError(w, errorz.ErrNotFound)
+			s.handleError(w, r, errorz.ErrNotFound)
 			return
 		}
 
@@ -40,13 +40,13 @@ func (s *Server) loggedIn(pattern string, handler http.Handler) {
 	s.mux.Handle(pattern, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sess, err := sessionFromCtx(r.Context())
 		if err != nil {
-			s.handleError(w, err)
+			s.handleError(w, r, err)
 			return
 		}
 
 		_, ok := sessionUserID(sess)
 		if !ok {
-			s.handleError(w, errorz.ErrNotFound)
+			s.handleError(w, r, errorz.ErrNotFound)
 			return
 		}
 

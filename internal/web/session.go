@@ -15,13 +15,13 @@ func (s *Server) session(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sess, err := s.deps.SessionStore.Get(r, sessionCookieName)
 		if err != nil {
-			s.handleError(w, err)
+			s.handleError(w, r, err)
 			return
 		}
 
 		err = s.deps.SessionStore.Save(r, w, sess)
 		if err != nil {
-			s.handleError(w, err)
+			s.handleError(w, r, err)
 			return
 		}
 

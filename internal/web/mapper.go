@@ -7,59 +7,65 @@ import (
 	"github.com/gorilla/sessions"
 )
 
-// mapper is a generic HTTP handler that maps requests to target
-// function calls and writes the output to the response.
+// mapper is a generic HTTP handler that maps:
+// - Incoming HTTP requests to a target function.
+// - Return values and errors to a response.
+// The mapping logic is customizable.
 type mapper[IN, OUT any] struct {
-	s      *Server
-	req    func(*http.Request) (IN, error)
-	target func(context.Context, IN) (OUT, error)
-	res    func(result[IN, OUT]) error
+	s *Server
+	// reqToInFunc will be called to convert s.r to a value of type IN.
+	reqToInFunc func(s shared) (IN, error)
+	// targetFunc is the function that will be called with c.in as input.
+	targetFunc func(context.Context, IN) (OUT, error)
+	// successFunc will be called if targetFunc was successful, it will
+	successFunc func(c result[IN, OUT]) error
+	// failFunc will be called if reqToInFunc or targetFunc failed.
+	// By default this will call the standard server error handler.
+	failFunc func(c shared, err error)
 }
 
-// result is the result of a succesful request.
-// it contains all relevant data because we can't know
-// in advance what we will need to construct a response.
-type result[IN, OUT any] struct {
+type shared struct {
 	s    *Server
 	r    *http.Request
-	w    http.ResponseWriter
 	sess *sessions.Session
-	in   IN
-	out  OUT
+	w    http.ResponseWriter
 }
 
-// mapBoth creates a HTTP Handler that:
+type result[IN, OUT any] struct {
+	shared
+	in  IN
+	out OUT
+}
+
+// newHandler creates a HTTP Handler that:
 // 1. Maps the request to a value of input type IN.
-// 2. Calls the mapBoth func with that value.
+// 2. Calls the newHandler func with that value.
 // 3. Writes the output of type OUT to the response with status 200.
 //
 // Errors are written using the server error handler.
-func mapBoth[IN, OUT any](s *Server, targetFunc func(context.Context, IN) (OUT, error)) *mapper[IN, OUT] {
+func newHandler[IN, OUT any](s *Server, targetFunc func(context.Context, IN) (OUT, error)) *mapper[IN, OUT] {
 	return &mapper[IN, OUT]{
-		s: s,
-		req: func(r *http.Request) (IN, error) {
-			return defaultRequest[IN](s, r)
-		},
-		target: targetFunc,
-		res: func(r result[IN, OUT]) error {
-			return defaultResponse(r)
+		s:           s,
+		reqToInFunc: defaultReqToIn[IN],
+		targetFunc:  targetFunc,
+		successFunc: defaultSuccess[IN, OUT],
+		failFunc: func(s shared, err error) {
+			s.s.handleError(s.w, s.r, err)
 		},
 	}
 }
 
-// mapRequest creates a HTTP Handler that:
+// newInputHandler creates a HTTP Handler that:
 // 1. Maps the request to a value of type IN.
 // 2. Calls the target func with that value.
 // 3. Writes a status 200 response to the client if target func was successful.
 //
 // Errors are written using the server error handler.
-func mapRequest[IN any](s *Server, targetFunc func(context.Context, IN) error) *mapper[IN, struct{}] {
+func newInputHandler[IN any](s *Server, targetFunc func(context.Context, IN) error) *mapper[IN, struct{}] {
 	return &mapper[IN, struct{}]{
-		s: s,
-		req: func(r *http.Request) (IN, error) {
-			return defaultRequest[IN](s, r)
-		},
-		target: func(ctx context.Context, in IN) (struct{}, error) {
+		s:           s,
+		reqToInFunc: defaultReqToIn[IN],
+		targetFunc: func(ctx context.Context, in IN) (struct{}, error) {
 			err := targetFunc(ctx, in)
 			if err != nil {
 				return struct{}{}, err
@@ -67,98 +73,78 @@ func mapRequest[IN any](s *Server, targetFunc func(context.Context, IN) error) *
 
 			return struct{}{}, nil
 		},
-		res: func(r result[IN, struct{}]) error {
-			// TODO: actually write a response.
-			return nil
+		successFunc: defaultSuccess[IN, struct{}],
+		failFunc: func(s shared, err error) {
+			s.s.handleError(s.w, s.r, err)
 		},
 	}
 }
 
-// mapResponse creates a HTTP Handler that:
-// 1. Calls the target func.
-// 2. Maps the returned value of type OUT to the response with a status 200.
-//
-// Errors are written using the server error handler.
-//func mapResponse[OUT any](s *Server, targetFunc func(context.Context) (OUT, error)) *mapper[struct{}, OUT] {
-//	return &mapper[struct{}, OUT]{
-//		s: s,
-//		req: func(r *http.Request) (struct{}, error) {
-//			return struct{}{}, nil
-//		},
-//		target: func(ctx context.Context, _ struct{}) (OUT, error) {
-//			out, err := targetFunc(ctx)
-//			if err != nil {
-//				return out, err
-//			}
-//
-//			return out, nil
-//		},
-//		res: func(r result[struct{}, OUT]) error {
-//			return defaultResponse(r)
-//		},
-//	}
-//}
+// onSuccess provides custom logic to deal with successful target function calls.
+func (e *mapper[IN, OUT]) onSuccess(fn func(result[IN, OUT]) error) *mapper[IN, OUT] {
+	e.successFunc = fn
+	return e
+}
 
-// request overwrites the function that maps the request to the input type.
-//func (e *mapper[IN, OUT]) request(fn func(r *http.Request) (IN, error)) *mapper[IN, OUT] {
-//	e.req = fn
-//	return e
-//}
-
-// response overwrites the function that writes the output to the response.
-func (e *mapper[IN, OUT]) response(fn func(result[IN, OUT]) error) *mapper[IN, OUT] {
-	e.res = fn
+// onFail provides custom logic to deal with errors.
+func (e *mapper[IN, OUT]) onFail(fn func(shared, error)) *mapper[IN, OUT] {
+	e.failFunc = fn
 	return e
 }
 
 func (e *mapper[IN, OUT]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	sess, err := sessionFromCtx(r.Context())
 	if err != nil {
-		e.s.handleError(w, err)
+		// no shared data yet, use the default error handler.
+		e.s.handleError(w, r, err)
 		return
 	}
 
-	in, err := e.req(r)
-	if err != nil {
-		e.s.handleError(w, err)
-		return
-	}
-
-	out, err := e.target(r.Context(), in)
-	if err != nil {
-		e.s.handleError(w, err)
-		return
-	}
-
-	result := result[IN, OUT]{
+	s := shared{
 		s:    e.s,
 		r:    r,
-		w:    w,
 		sess: sess,
-		in:   in,
-		out:  out,
+		w:    w,
 	}
 
-	err = e.res(result)
+	in, err := e.reqToInFunc(s)
 	if err != nil {
-		e.s.handleError(w, err)
+		e.failFunc(s, err)
+		return
+	}
+
+	out, err := e.targetFunc(r.Context(), in)
+	if err != nil {
+		e.failFunc(s, err)
+		return
+	}
+
+	pc := result[IN, OUT]{
+		shared: s,
+		in:     in,
+		out:    out,
+	}
+
+	err = e.successFunc(pc)
+	if err != nil {
+		e.failFunc(s, err)
 		return
 	}
 }
 
-// defaultRequest is the default way to map a request to a struct.
-func defaultRequest[IN any](s *Server, r *http.Request) (IN, error) {
+// defaultReqToIn is the default way to map a request to a struct.
+func defaultReqToIn[IN any](s shared) (IN, error) {
 	var in IN
-	err := r.ParseForm()
+	err := s.r.ParseForm()
 	if err != nil {
 		return in, err
 	}
 
 	// Remove the CSRF token from the form, it won't need to be mapped
 	// to any target types and the decoder will fail on it.
-	r.Form.Del(csrfTokenField)
+	s.r.Form.Del(csrfTokenField)
 
-	err = s.decoder.Decode(&in, r.Form)
+	err = s.s.decoder.Decode(&in, s.r.Form)
 	if err != nil {
 		return in, err
 	}
@@ -166,8 +152,8 @@ func defaultRequest[IN any](s *Server, r *http.Request) (IN, error) {
 	return in, nil
 }
 
-// defaultResponse is the default way to write a response to the client.
-func defaultResponse[IN, OUT any](result[IN, OUT]) error {
+// defaultSuccess is the default way to write a response to the client.
+func defaultSuccess[IN, OUT any](result[IN, OUT]) error {
 	// TODO: Implement.
 	return nil
 }
