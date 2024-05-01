@@ -52,30 +52,32 @@ func NewServer(deps *ServerDeps, cfg ServerConfig) *Server {
 		decoder: schema.NewDecoder(),
 	}
 
+	// Below we set up all the endpoints of the server.
+	//
 	// Most non-static endpoints below are created using the newHandler functions.
 	// These functions return handlers that automatically map between HTTP requests, target functions and HTTP responses.
 	// The request mapping and response writing is customizable.
 
 	// Homepage endpoint.
-	s.public("GET /{$}", s.staticHandler("hello-world"))
+	s.public("GET /{$}", newViewHandler(s, "hello-world"))
 
 	// Register user endpoints.
 	{
-		s.publicOnly("GET /register", s.staticHandler("register-user"))
+		s.publicOnly("GET /register", newViewHandler(s, "register-user"))
 	}
 	{
 		const route = "POST /register"
 		h := newInputHandler(s, deps.AuthService.RegisterUser)
-		h.onSuccess(func(r result[auth.Credentials, struct{}]) error {
+		h.onSuccess = func(r result[auth.Credentials, struct{}]) error {
 			r.sess.AddFlash("Thank you for your registration. Please follow the instructions that have arrived in your inbox.")
-			err := r.s.deps.SessionStore.Save(r.r, r.w, r.sess)
+			err := s.deps.SessionStore.Save(r.r, r.w, r.sess)
 			if err != nil {
 				return err
 			}
 
 			http.Redirect(r.w, r.r, "/register", http.StatusFound)
 			return nil
-		})
+		}
 
 		s.publicOnly(route, h)
 	}
@@ -87,37 +89,37 @@ func NewServer(deps *ServerDeps, cfg ServerConfig) *Server {
 			// this target function ensures the input is validated before it's forwared to the view.
 			return token, nil
 		})
-		h.onSuccess(func(r result[auth.EmailTokenRaw, auth.EmailTokenRaw]) error {
-			return r.s.writeView(r.w, r.r, "activate-user", r.out)
-		})
+		h.onSuccess = func(r result[auth.EmailTokenRaw, auth.EmailTokenRaw]) error {
+			return s.writeView(r.w, r.r, "activate-user", r.out)
+		}
 
 		s.publicOnly(route, h)
 	}
 	{
 		const route = "POST /user-activations"
 		h := newInputHandler(s, deps.AuthService.ActivateUser)
-		h.onSuccess(func(r result[auth.EmailTokenRaw, struct{}]) error {
+		h.onSuccess = func(r result[auth.EmailTokenRaw, struct{}]) error {
 			r.sess.AddFlash("Your account has been activated, login below.")
-			err := r.s.deps.SessionStore.Save(r.r, r.w, r.sess)
+			err := s.deps.SessionStore.Save(r.r, r.w, r.sess)
 			if err != nil {
 				return err
 			}
 
 			http.Redirect(r.w, r.r, "/login", http.StatusFound)
 			return nil
-		})
+		}
 
 		s.publicOnly(route, h)
 	}
 
 	// Login user endpoints
 	{
-		s.publicOnly("GET /login", s.staticHandler("login-user"))
+		s.publicOnly("GET /login", newViewHandler(s, "login-user"))
 	}
 	{
 		const route = "POST /login"
 		h := newHandler(s, deps.AuthService.Authenticate)
-		h.onSuccess(func(r result[auth.Credentials, auth.User]) error {
+		h.onSuccess = func(r result[auth.Credentials, auth.User]) error {
 			// If we get here, the user has been authenticated.
 
 			// We clear the CSRF token to provide defense in depth against fixation attacks.
@@ -133,14 +135,14 @@ func NewServer(deps *ServerDeps, cfg ServerConfig) *Server {
 			})
 
 			setSessionUserID(r.sess, r.out.ID)
-			err := r.s.deps.SessionStore.Save(r.r, r.w, r.sess)
+			err := s.deps.SessionStore.Save(r.r, r.w, r.sess)
 			if err != nil {
 				return err
 			}
 
 			http.Redirect(r.w, r.r, "/dashboard", http.StatusFound)
 			return nil
-		})
+		}
 
 		s.publicOnly(route, h)
 	}
@@ -170,7 +172,7 @@ func NewServer(deps *ServerDeps, cfg ServerConfig) *Server {
 
 	// Request password reset endpoints
 	{
-		s.publicOnly("GET /forgot-password", s.staticHandler("forgot-password"))
+		s.publicOnly("GET /forgot-password", newViewHandler(s, "forgot-password"))
 	}
 	{
 		const route = "POST /forgot-password"
@@ -184,16 +186,16 @@ func NewServer(deps *ServerDeps, cfg ServerConfig) *Server {
 			s.deps.AuthService.RequestPasswordReset(ctx, reset.Email)
 			return nil
 		})
-		h.onSuccess(func(r result[passwordReset, struct{}]) error {
+		h.onSuccess = func(r result[passwordReset, struct{}]) error {
 			r.sess.AddFlash("Check your inbox for instructions to reset your password.")
-			err := r.s.deps.SessionStore.Save(r.r, r.w, r.sess)
+			err := s.deps.SessionStore.Save(r.r, r.w, r.sess)
 			if err != nil {
 				return err
 			}
 
 			http.Redirect(r.w, r.r, "/forgot-password", http.StatusFound)
 			return nil
-		})
+		}
 
 		s.publicOnly(route, h)
 	}
@@ -205,9 +207,9 @@ func NewServer(deps *ServerDeps, cfg ServerConfig) *Server {
 			// this target function ensures the input is validated before it's forwared to the view.
 			return token, nil
 		})
-		h.onSuccess(func(r result[auth.EmailTokenRaw, auth.EmailTokenRaw]) error {
-			return r.s.writeView(r.w, r.r, "reset-password", r.out)
-		})
+		h.onSuccess = func(r result[auth.EmailTokenRaw, auth.EmailTokenRaw]) error {
+			return s.writeView(r.w, r.r, "reset-password", r.out)
+		}
 
 		s.publicOnly(route, h)
 	}
@@ -215,25 +217,28 @@ func NewServer(deps *ServerDeps, cfg ServerConfig) *Server {
 	{
 		const route = "POST /password-resets"
 		h := newInputHandler(s, deps.AuthService.ResetPassword)
-		h.onSuccess(func(r result[auth.NewPassword, struct{}]) error {
+		h.onSuccess = func(r result[auth.NewPassword, struct{}]) error {
 			r.sess.AddFlash("Your password was reset, login with your new password below")
-			err := r.s.deps.SessionStore.Save(r.r, r.w, r.sess)
+			err := s.deps.SessionStore.Save(r.r, r.w, r.sess)
 			if err != nil {
 				return err
 			}
 
 			http.Redirect(r.w, r.r, "/login", http.StatusFound)
 			return nil
-		})
+		}
 
 		s.publicOnly(route, h)
 	}
 
 	// Dashboard endpoints
-	s.loggedIn("GET /dashboard", s.staticHandler("dashboard"))
+	s.loggedIn("GET /dashboard", newViewHandler(s, "dashboard"))
 
+	// Static frontend files endpoint.
 	s.mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(s.deps.DistFS)))
 
+	// Below we set up the global middlewares.
+	//
 	// Wrap the mux with global middlewares.
 	csrfMW := csrf.Protect(
 		cfg.CSRFKey.SecretValue(),
@@ -256,16 +261,6 @@ func NewServer(deps *ServerDeps, cfg ServerConfig) *Server {
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.handler.ServeHTTP(w, r)
-}
-
-func (s *Server) staticHandler(name string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		err := s.writeView(w, r, name, nil)
-		if err != nil {
-			s.handleError(w, r, err)
-			return
-		}
-	}
 }
 
 func (s *Server) writeView(w http.ResponseWriter, r *http.Request, name string, data any) error {

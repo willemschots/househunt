@@ -317,8 +317,14 @@ func Test_Service_Authenticate(t *testing.T) {
 		credentials.Password = must(auth.ParsePassword("wrongPassword"))
 
 		_, err := st.svc.Authenticate(context.Background(), credentials)
-		if !errors.Is(err, auth.ErrInvalidCredentials) {
-			t.Fatalf("expected error %v, got %v (via errors.Is)", auth.ErrInvalidCredentials, err)
+
+		var invalidInput errorz.InvalidInput
+		if !errors.As(err, &invalidInput) {
+			t.Fatalf("expected error to be of type %T, got %T (via errors.As)", invalidInput, err)
+		}
+
+		if !errors.Is(invalidInput, auth.ErrInvalidCredentials) {
+			t.Fatalf("expected error %v, got %v (via errors.Is)", auth.ErrInvalidCredentials, invalidInput)
 		}
 
 		// assert no async errors were reported.
@@ -334,8 +340,14 @@ func Test_Service_Authenticate(t *testing.T) {
 		credentials.Email = must(email.ParseAddress("jacob@example.com"))
 
 		_, err := st.svc.Authenticate(context.Background(), credentials)
-		if !errors.Is(err, auth.ErrInvalidCredentials) {
-			t.Fatalf("expected error %v, got %v (via errors.Is)", auth.ErrInvalidCredentials, err)
+
+		var invalidInput errorz.InvalidInput
+		if !errors.As(err, &invalidInput) {
+			t.Fatalf("expected error to be of type %T, got %T (via errors.As)", invalidInput, err)
+		}
+
+		if !errors.Is(invalidInput, auth.ErrInvalidCredentials) {
+			t.Fatalf("expected error %v, got %v (via errors.Is)", auth.ErrInvalidCredentials, invalidInput)
 		}
 
 		// assert no async errors were reported.
@@ -348,8 +360,14 @@ func Test_Service_Authenticate(t *testing.T) {
 		credentials, _ := st.registerUser()
 
 		_, err := st.svc.Authenticate(context.Background(), credentials)
-		if !errors.Is(err, auth.ErrInvalidCredentials) {
-			t.Fatalf("expected error %v, got %v (via errors.Is)", auth.ErrInvalidCredentials, err)
+
+		var invalidInput errorz.InvalidInput
+		if !errors.As(err, &invalidInput) {
+			t.Fatalf("expected error to be of type %T, got %T (via errors.As)", invalidInput, err)
+		}
+
+		if !errors.Is(invalidInput, auth.ErrInvalidCredentials) {
+			t.Fatalf("expected error %v, got %v (via errors.Is)", auth.ErrInvalidCredentials, invalidInput)
 		}
 
 		// assert no async errors were reported.
