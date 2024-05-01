@@ -90,6 +90,11 @@ func decodeError(err error) error {
 	if errors.As(err, &multiErr) {
 		var invalidInput errorz.InvalidInput
 		for key, e := range multiErr {
+			var convErr schema.ConversionError
+			if errors.As(e, &convErr) && convErr.Err != nil {
+				e = convErr.Err
+			}
+
 			invalidInput = append(invalidInput, errorz.Keyed{
 				Key: key,
 				Err: e,

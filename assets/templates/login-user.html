@@ -8,11 +8,13 @@
   </div>
 
   <div class="max-w-[480px] bg-slate-50 rounded-md shadow-md p-8">
-    <h1 class="text-2xl">Login</h1>
+    <h1 class="text-2xl mb-2">Login</h1>
 
     {{ template "flash-messages" . }}
 
-    <form action="/login" id="login-user" method="POST" class="mt-4">
+    {{ template "input-errors" . }}
+
+    <form action="/login" id="login-user" method="POST" class="mt-2">
       {{ template "csrf-input" . }}
 
       <input type="email" name="email" placeholder="Email" required class="text-input">

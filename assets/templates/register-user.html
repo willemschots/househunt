@@ -12,6 +12,8 @@
 
     {{ template "flash-messages" . }}
 
+    {{ template "input-errors" . }}
+
     <form action="/register" id="register-user" method="POST" class="mt-4">
       {{ template "csrf-input" . }}
       <input type="email" name="email" placeholder="Email" required class="text-input">

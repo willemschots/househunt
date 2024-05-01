@@ -1,0 +1,12 @@
+{{ define "input-errors" }}
+  {{ if gt (len .InputErrors) 0 }}
+  <div class="bg-red-100 px-2 py-1 text-red-700 rounded-md">
+    <p class="text-sm">Errors:</p>
+    <ul class="pl-4 rounded-md list-disc">
+    {{ range .InputErrors }}
+      <li>{{ . }}</li>
+    {{ end }}
+    </ul>
+  </div>
+  {{ end }}
+{{ end }}
