@@ -14,10 +14,12 @@
 
     {{ template "flash-messages" . }}
 
+    {{ template "input-errors" . }}
+
     <form action="/user-activations" id="activate-user" method="POST" class="mt-4">
       {{ template "csrf-input" . }}
-      <input type="hidden" name="id" value="{{ .View.ID }}">
-      <input type="hidden" name="token" value="{{ .View.Token }}">
+      <input type="hidden" name="id" value="{{ .Data.ID }}">
+      <input type="hidden" name="token" value="{{ .Data.Token }}">
       <input type="submit" class="btn btn-blue" value="Activate Account">
     </form>
   </div>

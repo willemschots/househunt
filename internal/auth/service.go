@@ -268,12 +268,12 @@ func (s *Service) Authenticate(ctx context.Context, c Credentials) (User, error)
 		// Even if no user is found we compare to a hash to prevent timing differences
 		// that could result in user enumeration attacks.
 		_ = c.Password.Match(s.comparisonHash)
-		return User{}, ErrInvalidCredentials
+		return User{}, errorz.InvalidInput{ErrInvalidCredentials}
 	}
 
 	match := c.Password.Match(users[0].PasswordHash)
 	if !match {
-		return User{}, ErrInvalidCredentials
+		return User{}, errorz.InvalidInput{ErrInvalidCredentials}
 	}
 
 	return users[0], nil

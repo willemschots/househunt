@@ -25,6 +25,19 @@ func Test_UserStories(t *testing.T) {
 
 		c := newClient(t)
 
+		t.Run("prevent mistakes when registering a new account", func(t *testing.T) {
+			// first view the form.
+			body := c.mustGetBody(t, "/register", assertStatusCode(t, http.StatusOK))
+
+			form := parseHTMLFormWithID(t, strings.NewReader(body), "register-user")
+
+			// then submit it with invalid values.
+			form.values.Set("email", "") // empty email
+			form.values.Set("password", "reallyStrongPassword1")
+
+			c.mustSubmitForm(t, form, assertStatusCode(t, http.StatusBadRequest))
+		})
+
 		t.Run("register a new account", func(t *testing.T) {
 			// first view the form.
 			body := c.mustGetBody(t, "/register", assertStatusCode(t, http.StatusOK))
@@ -66,6 +79,19 @@ func Test_UserStories(t *testing.T) {
 
 		t.Run("verify I can't access the dashboard", func(t *testing.T) {
 			c.mustGetBody(t, "/dashboard", assertStatusCode(t, http.StatusNotFound))
+		})
+
+		t.Run("prevent mistakes when logging into my account", func(t *testing.T) {
+			// first view the login form.
+			body := c.mustGetBody(t, "/login", assertStatusCode(t, http.StatusOK))
+
+			form := parseHTMLFormWithID(t, strings.NewReader(body), "login-user")
+
+			// then submit it with invalid values.
+			form.values.Set("email", "") // empty email.
+			form.values.Set("password", "reallyStrongPassword1")
+
+			c.mustSubmitForm(t, form, assertStatusCode(t, http.StatusBadRequest))
 		})
 
 		t.Run("login to my now active account", func(t *testing.T) {
@@ -111,6 +137,18 @@ func Test_UserStories(t *testing.T) {
 			c.mustGetBody(t, "/dashboard", assertStatusCode(t, http.StatusNotFound))
 		})
 
+		t.Run("prevent mistakes when requesting a new password", func(t *testing.T) {
+			// first view the form.
+			body := c.mustGetBody(t, "/forgot-password", assertStatusCode(t, http.StatusOK))
+
+			form := parseHTMLFormWithID(t, strings.NewReader(body), "forgot-password")
+
+			// then submit it with invalid values.
+			form.values.Set("email", "") // empty email.
+
+			c.mustSubmitForm(t, form, assertStatusCode(t, http.StatusBadRequest))
+		})
+
 		t.Run("request a new password because I forgot my old one", func(t *testing.T) {
 			// first view the form.
 			body := c.mustGetBody(t, "/forgot-password", assertStatusCode(t, http.StatusOK))
@@ -133,6 +171,18 @@ func Test_UserStories(t *testing.T) {
 		t.Run("wait for the password reset email", func(t *testing.T) {
 			// wait for the password reset email to be logged.
 			passwordResetURL = waitAndCaptureURL(t, logs, "agent@example.com", "/password-resets")
+		})
+
+		t.Run("prevent mistakes when resetting my password", func(t *testing.T) {
+			// first view the form
+			body := c.mustGetBody(t, passwordResetURL.String(), assertStatusCode(t, http.StatusOK))
+
+			form := parseHTMLFormWithID(t, strings.NewReader(body), "reset-password")
+
+			// then submit it with invalid values.
+			form.values.Set("password", "") // empty password.
+
+			c.mustSubmitForm(t, form, assertStatusCode(t, http.StatusBadRequest))
 		})
 
 		t.Run("reset my password", func(t *testing.T) {

@@ -1,0 +1,15 @@
+{{ define "title" }}Something went wrong{{end}}
+
+{{define "body"}}
+
+<div class="w-full h-full bg-slate-100 flex flex-wrap justify-center items-start">
+  <div class="w-full">
+    {{ template "header" . }}
+  </div>
+
+  <div class="max-w-[480px] bg-slate-50 rounded-md shadow-md p-8">
+    <h1 class="text-2xl">Something went wrong</h1>
+  </div>
+</div>
+
+{{end}}

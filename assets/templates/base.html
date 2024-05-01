@@ -3,12 +3,12 @@
 <head>
   <title>{{ template "title" .}}</title>
 
-  <link rel="stylesheet" href="/static/bundle.css?v={{ .Global.Version }}">
+  <link rel="stylesheet" href="/static/bundle.css?v={{ .Version }}">
 </head>
 <body>
 
   {{ template "body" . }}
 
-  <script defer src="/static/bundle.js?v={{ .Global.Version }}"></script>
+  <script defer src="/static/bundle.js?v={{ .Version }}"></script>
 </body>
 </html>
