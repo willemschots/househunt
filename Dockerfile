@@ -1,5 +1,5 @@
 # Stage 1. Build the binaries.
-FROM golang:1.22-alpine as build
+FROM golang:1.22-alpine AS build
 
 # Git is required for fetching the dependencies.
 RUN apk add --no-cache git gcc musl-dev
