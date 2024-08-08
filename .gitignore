@@ -1,3 +1,4 @@
 .localdev
 .env
 assets/node_modules
+assets/dist/bundle*

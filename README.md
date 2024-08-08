@@ -32,30 +32,34 @@ Househunt is being build in public by [Willem Schots](https://www.willem.dev/), 
 
 ## Running househunt locally
 
-The recommended way to run the project locally is using docker compose, this will ease management of env variable based settings.
+It's recommended to run the project locally using docker compose.
 
-1. Create a directory for storing the local data in the project root directory:
+You will also need to have `npm` installed to build the frontend assets.
+
+1. Create a directory to store data in the project root directory:
 ```sh
 mkdir .localdev
 ```
-2. Configure `.env` file based on the data in `.env.sample`.
-3. Run `docker compose up`. This will build the app and run it. You should see the database migrations being triggered and the HTTP server starting up.
-4. Navigate to `http://localhost:8888` to see househunt in action.
+2. Create a local `.env` file by copying `.env.sample`:
+```sh
+cp .env .env.sample
+```
+3. Follow the instructions in `.env` to configure the environment.
+4. Build the frontend for the first time by running `make frontend`.
+5. Run `docker compose up`. This will build the app and run it. You should see the database migrations being triggered and the HTTP server starting up.
+6. Navigate to `http://localhost:8888` to see househunt in action.
 
 ## Frontend development
 
-The recommended way with the frontend locally is to first run househunt as described above.
+If you run househunt as described above, the container image will need to be rebuild each time the CSS and/or Javascript files are changed. Not ideal.
 
-While househunt is running at `http://localhost:8888`, take the following steps:
+When working on the frontend it's convenient to run an additional server that will inject these files as necessary. This can be done as follows:
 
-1. Run `npm install --prefix assets` to install all dependencies.
-2. Run `npm run --prefix assets dev` to run the development server.
-3. Navigate to `http://localhost:3000` to reach the frontend server.
+1. Run `npm run --prefix assets dev` to run the server.
+2. Navigate to `http://localhost:3000` to find reach it.
 
-Apart from the requests for the Javascript and CSS bundles the frontend server forwards everything to the househunt server. In addition it injects code for:
-- Hot reloads when the Javascript or CSS bundles change.
-- Auto refreshes when the view files change.
+This server will also:
+- Hot reload Javascript and CSS.
+- Auto refresh when HTML template files are changed.
 
-The provided Docker Compose configuration always loads view files from disk, so any changes are immediately reflected without having to rebuild the container image.
-
-
+The provided Docker Compose configuration will load HTML templates from a shared directory, any changes made to them will be visible in replies from the backend. In production you will want to cache the HTML templates in memory.
