@@ -38,7 +38,7 @@ func (s *Server) prepViewData(r *http.Request, w http.ResponseWriter, data any) 
 		CSRFToken:   csrf.Token(r),
 		IsLoggedIn:  loggedIn,
 		UserID:      userID,
-		Flashes:     sess.Flashes(),
+		Flashes:     sess.ConsumeFlashes(),
 		InputForm:   r.Form,
 		InputErrors: nil,
 		Data:        data,

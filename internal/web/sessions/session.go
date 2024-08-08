@@ -34,6 +34,10 @@ func (s *Session) AddFlash(flash any, vars ...string) {
 	s.base.AddFlash(flash, vars...)
 }
 
-func (s *Session) Flashes() []any {
-	return s.base.Flashes()
+func (s *Session) ConsumeFlashes() []any {
+	flashes := s.base.Flashes()
+	if len(flashes) > 0 {
+		s.needsSave = true
+	}
+	return flashes
 }
